@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام محاسبة يلا فيب - أراكيل وفيب</title>
+    
+    <!-- CSS stylesheet link -->
+    <link rel="stylesheet" href="style.css?v=3">
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js for reports rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Firebase Client SDK (compatibility version) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    
+    <!-- html2pdf for saving reports as PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+
+    <!-- Barcode scan visual feedback flash -->
+    <div id="barcode-flash-overlay"></div>
+
+    <!-- 1. LOGIN SCREEN -->
+    <div id="login-container">
+        <div class="login-card">
+            <div class="login-logo">
+                <i class="fa-solid fa-smoking"></i>
+            </div>
+            <h2>نظام محاسبة يلا فيب</h2>
+            <p>أراكيل، فيب ومستلزمات التدخين الإلكتروني</p>
+            
+            <form onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-uname">اسم المستخدم</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="login-uname" class="form-control" placeholder="أدخل اسم المستخدم..." required autocomplete="username">
+                        <i class="fa-regular fa-user"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="login-pass">كلمة المرور</label>
+                    <div class="input-icon-wrapper">
+                        <input type="password" id="login-pass" class="form-control" placeholder="أدخل كلمة المرور..." required autocomplete="current-password">
+                        <i class="fa-solid fa-lock"></i>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-primary" style="margin-top: 15px;">
+                    <span>تسجيل الدخول للنظام</span>
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. APPN CONTAINER & SIDEBAR -->
+    <div id="app-container" style="display: none;">
+        <!-- SIDEBAR NAVIGATION -->
+        <nav class="sidebar">
+            <div class="sidebar-logo">
+                <i class="fa-solid fa-smoking"></i>
+                <div>
+                    <h1>حسابات يلا فيب</h1>
+                    <p>إدارة المبيعات والمخازن</p>
+                </div>
+            </div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active" data-tab="invoice">
+                    <a href="javascript:void(0)" onclick="switchTab('invoice')">
+                        <i class="fa-solid fa-calculator"></i>
+                        <span>فاتورة مبيعات (وارد)</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="expenses">
+                    <a href="javascript:void(0)" onclick="switchTab('expenses')">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                        <span>المصروفات والرواتب</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="reports">
+                    <a href="javascript:void(0)" onclick="switchTab('reports')">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>التقرير اليومي والأرباح</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="monthly-reports">
+                    <a href="javascript:void(0)" onclick="switchTab('monthly-reports')">
+                        <i class="fa-solid fa-calendar-days"></i>
+                        <span>التقرير المالي الشهري</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="treasury">
+                    <a href="javascript:void(0)" onclick="switchTab('treasury')">
+                        <i class="fa-solid fa-vault"></i>
+                        <span>جرد ومطابقة الخزينة</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="inventory">
+                    <a href="javascript:void(0)" onclick="switchTab('inventory')">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                        <span>المستودع والمخزن</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="settings">
+                    <a href="javascript:void(0)" onclick="switchTab('settings')">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span>إعدادات الاتصال</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="new-products-report">
+                    <a href="javascript:void(0)" onclick="switchTab('new-products-report')">
+                        <i class="fa-solid fa-clipboard-list"></i>
+                        <span>تقرير إضافة المنتجات</span>
+                    </a>
+                </li>
+            </ul>
+            
+            <!-- User Profile Drawer -->
+            <div class="user-profile-badge">
+                <div class="user-avatar">
+                    <i class="fa-solid fa-user-tie"></i>
+                </div>
+                <div class="user-details">
+                    <div class="user-name" id="sidebar-user-fullname">جاري التحميل...</div>
+                    <div class="user-role" id="sidebar-user-role">كاشير</div>
+                </div>
+                <button class="logout-btn" onclick="handleLogout()" title="تسجيل الخروج">
+                    <i class="fa-solid fa-power-off"></i>
+                </button>
+            </div>
+        </nav>
+        
+        <!-- MAIN WORKSPACE -->
+        <main class="main-workspace">
+            <!-- Header bar metrics & time info -->
+            <div class="workspace-header">
+                <div class="workspace-title">
+                    <h2 id="workspace-current-title"><i class="fa-solid fa-cash-register"></i> نقطة مبيعات الكاشير</h2>
+                    <p id="workspace-current-desc">إصدار وصولات الزبائن وتمرير الباركود</p>
+                </div>
+                
+                <div class="status-indicator-bar">
+                    <!-- Dark / Light theme switcher toggle -->
+                    <button class="sync-badge pointer" id="theme-toggle-btn" onclick="toggleTheme()" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); color: var(--text-main);">
+                        <i id="theme-icon" class="fa-solid fa-sun" style="color:var(--accent)"></i>
+                        <span id="theme-text">الوضع الفاتح</span>
+                    </button>
+
+                    <!-- Dynamic Live Clock -->
+                    <div class="sync-badge" style="font-family:'Inter';">
+                        <i class="fa-regular fa-clock" style="color:var(--primary)"></i>
+                        <span id="live-time">00:00:00</span>
+                    </div>
+                    
+                    <!-- Online / Offline Cloud Sync Status -->
+                    <div class="sync-badge">
+                        <span id="sync-dot" class="sync-dot"></span>
+                        <span id="sync-text">جاري التحقق...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 1: INVOICING WORKSPACE -->
+            <div id="invoice-panel" class="workspace-panel active">
+                <div class="barcode-box-alert">
+                    <i class="fa-solid fa-barcode barcode-pulse-icon"></i>
+                    <span><strong>قارئ الباركود نشط:</strong> قم بمسح باركود المنتج مباشرة في أي وقت لإضافته للسلة تلقائياً.</span>
+                </div>
+                
+                <div class="grid-2col">
+                    <!-- Left: Invoice Basket items -->
+                    <div class="card-panel">
+                        <div class="card-panel-title">
+                            <span>قائمة المشتريات المحددة</span>
+                            <span class="badge success" style="font-size:11px;">الباركود مفعل</span>
+                        </div>
+                        
+                        <!-- Search and add manual product helper dropdown -->
+                        <div class="search-add-box" style="position: relative;">
+                            <div class="input-icon-wrapper w-full">
+                                <input type="text" id="invoice-search-input" class="form-control" placeholder="ابحث عن منتج بالاسم أو الباركود يدوياً...">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </div>
+                            <!-- Autocomplete dropdown options -->
+                            <div id="invoice-search-results" class="search-results-box"></div>
+                        </div>
+                        
+                        <!-- Basket items table -->
+                        <div class="basket-table-container">
+                            <table class="main-table" id="invoice-basket-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 35%;">المنتج</th>
+                                        <th style="width: 15%;">سعر المفرد</th>
+                                        <th style="width: 15%;">الكمية</th>
+                                        <th style="width: 15%;">الخصم</th>
+                                        <th style="width: 15%;">الإجمالي</th>
+                                        <th style="width: 5%;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="basket-items">
+                                    <!-- Dynamic rows inside app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Billing summaries and pay -->
+                    <div class="card-panel">
+                        <div class="card-panel-title">تفاصيل الحساب والدفع</div>
+                        
+                        <div class="bill-summary">
+                            <div class="bill-row">
+                                <span>المجموع الكلي:</span>
+                                <span id="invoice-subtotal" class="price-value">0 د.ع</span>
+                            </div>
+                            
+                            <div class="form-group" style="margin-bottom: 5px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                    <input type="checkbox" id="is-delivery-sale" onchange="toggleDeliveryFields()">
+                                    <span>بيع بخدمة التوصيل</span>
+                                </label>
+                            </div>
+                            
+                            <div id="delivery-fields" style="display: none; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border-color);">
+                                <div class="form-group" style="margin-bottom: 8px;">
+                                    <input type="text" id="delivery-name" class="form-control" placeholder="اسم الزبون..." style="font-size: 12px; padding: 6px 10px;">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 8px;">
+                                    <input type="text" id="delivery-phone" class="form-control" placeholder="رقم الهاتف..." style="font-size: 12px; padding: 6px 10px;">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 5px;">
+                                    <input type="text" id="delivery-location" class="form-control" placeholder="مكان التوصيل / العنوان..." style="font-size: 12px; padding: 6px 10px;">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group" style="margin-bottom: 5px;">
+                                <label for="invoice-discount">الخصم الممنوح (د.ع)</label>
+                                <div class="input-icon-wrapper">
+                                    <input type="number" id="invoice-discount" class="form-control" placeholder="0" min="0" value="0" oninput="handleDiscountChange()">
+                                    <i class="fa-solid fa-tags"></i>
+                                </div>
+                            </div>
+                            
+                            <div class="bill-row highlight">
+                                <span>الصافي المطلوب:</span>
+                                <span id="invoice-total" class="price-value">0 د.ع</span>
+                            </div>
+                            
+                            <button class="btn btn-accent w-full mt-20" onclick="processCheckout()">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span>إصدار الفاتورة وتأكيد القبض</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: EXPENSES AND SALARIES WORKSPACE -->
+            <div id="expenses-panel" class="workspace-panel">
+                <div class="grid-2col">
+                    <!-- Left Forms Drawer -->
+                    <div>
+                        <!-- Add General Expenses Form -->
+                        <div class="card-panel">
+                            <div class="card-panel-title">تسجيل مصروفات المحل (صادر)</div>
+                            <form onsubmit="addGeneralExpense(event)">
+                                <div class="form-group">
+                                    <label for="exp-category">نوع المصروف / الفئة</label>
+                                    <select id="exp-category" class="form-control" style="padding-right:15px;" required>
+                                        <option value="">-- اختر فئة المصروف --</option>
+                                        <option value="بضاعة جديدة">شراء بضاعة ومستلزمات</option>
+                                        <option value="إيجار">إيجار المحل</option>
+                                        <option value="كهرباء ومياه">فاتورة كهرباء ومياه</option>
+                                        <option value="إنترنت وهاتف">إنترنت واشتراك هاتف</option>
+                                        <option value="صيانة ومعدات">صيانة المحل وتجهيز أجهزة</option>
+                                        <option value="أخرى">مصاريف نثرية أخرى</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="exp-amount">مبلغ المصروف (د.ع)</label>
+                                    <input type="number" id="exp-amount" class="form-control" placeholder="أدخل قيمة المبلغ..." required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="exp-desc">تفاصيل إضافية</label>
+                                    <textarea id="exp-desc" class="form-control" placeholder="اكتب ملاحظات إضافية هنا..." style="height:60px; padding-right:15px; resize:none;"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-accent w-full">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span>قيد وتخصيم المصروف</span>
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Employee Salary Advance Form -->
+                        <div class="card-panel">
+                            <div class="card-panel-title">قيد سحوبات / سلف الموظفين</div>
+                            <form onsubmit="addSalaryWithdrawal(event)">
+                                <div class="form-group">
+                                    <label for="salary-employee">الموظف الساحب</label>
+                                    <select id="salary-employee" class="form-control" style="padding-right:15px;" required>
+                                        <option value="">-- اختر الموظف --</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="salary-amount">المبلغ المسحوب (د.ع)</label>
+                                    <input type="number" id="salary-amount" class="form-control" placeholder="أدخل مبلغ السحبة..." required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="salary-desc">ملاحظات وسبب السحب</label>
+                                    <textarea id="salary-desc" class="form-control" placeholder="مثال: سلفة منتصف الشهر..." style="height:60px; padding-right:15px; resize:none;"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-danger w-full">
+                                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                                    <span>قيد السلفة في دفتر الموظف</span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Right Recent transactions (Separated into Tabs) -->
+                    <div class="card-panel" style="display:flex; flex-direction:column;">
+                        <div class="card-panel-title" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+                            <span>سجل التدفقات الصادرة اليومية</span>
+                            <div class="sub-tabs-container">
+                                <button type="button" class="sub-tab-btn active" id="subtab-expenses-btn" onclick="switchExpensesSubTab('expense')">المصروفات العامة</button>
+                                <button type="button" class="sub-tab-btn" id="subtab-salaries-btn" onclick="switchExpensesSubTab('salary')">سحوبات ورواتب الموظفين</button>
+                            </div>
+                        </div>
+                        <div class="basket-table-container" style="flex-grow:1; max-height:none;">
+                            <!-- General Expenses Table -->
+                            <table class="main-table" id="expenses-only-table">
+                                <thead>
+                                    <tr>
+                                        <th>الرمز</th>
+                                        <th>الوقت</th>
+                                        <th>الفئة</th>
+                                        <th>المبلغ</th>
+                                        <th>الملاحظات</th>
+                                        <th>بواسطة</th>
+                                        <th style="width: 12%; text-align: center;">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="expense-only-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                            
+                            <!-- Salaries/Advances Table -->
+                            <table class="main-table" id="salaries-only-table" style="display:none;">
+                                <thead>
+                                    <tr>
+                                        <th>الرمز</th>
+                                        <th>الوقت</th>
+                                        <th>الموظف</th>
+                                        <th>المبلغ</th>
+                                        <th>الملاحظات</th>
+                                        <th>بواسطة</th>
+                                        <th style="width: 12%; text-align: center;">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="salary-only-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Salary Audit report summary dashboard -->
+                <div class="card-panel">
+                    <div class="card-panel-title">
+                        <span>دفتر رواتب وسحوبات الموظفين الإجمالي</span>
+                        <span class="badge success" style="font-size: 11px;">تحديث مباشر</span>
+                    </div>
+                    <div class="employee-grid" id="employee-ledger-cards">
+                        <!-- Dynamic Cards Rendered in app.js -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: DAILY AND MONTHLY REPORTS -->
+            <div id="reports-panel" class="workspace-panel">
+                <!-- Top stats boxes -->
+                <div class="stats-grid">
+                    <div class="stat-card" style="border-right: 4px solid var(--primary);">
+                        <div class="stat-card-icon" style="background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); color: var(--primary);"><i class="fa-solid fa-money-bill-1-wave"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">الرصيد الافتتاحي</span>
+                            <span class="stat-card-value" id="report-today-opening">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid #10b981;">
+                        <div class="stat-card-icon" style="background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.2); color: #10b981;"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">وارد اليوم (المبيعات)</span>
+                            <span class="stat-card-value" id="report-today-sales">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid var(--danger);">
+                        <div class="stat-card-icon danger"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">صادر اليوم (مصاريف ورواتب)</span>
+                            <span class="stat-card-value" id="report-today-expenses">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid var(--accent);">
+                        <div class="stat-card-icon accent"><i class="fa-solid fa-scale-balanced"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">صافي الدخل اليومي</span>
+                            <span class="stat-card-value" id="report-today-net">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid #8b5cf6;">
+                        <div class="stat-card-icon" style="background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.2); color: #8b5cf6;"><i class="fa-solid fa-vault"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">الرصيد الدفتري المتوقع</span>
+                            <span class="stat-card-value" id="report-today-expected">0 د.ع</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions drawer for closure & print -->
+                <div class="d-flex gap-15 mb-20">
+                    <button class="btn btn-secondary" onclick="printDailyReport()">
+                        <i class="fa-solid fa-print"></i>
+                        <span>طباعة التقرير</span>
+                    </button>
+                    <button class="btn btn-accent" onclick="saveDailyReportPDF()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>حفظ كملف PDF</span>
+                    </button>
+                </div>
+
+                <!-- Day transaction details -->
+                <div class="card-panel mb-20">
+                    <div class="card-panel-title">تفاصيل مبيعات وتدفقات اليوم النشط</div>
+                    <div class="basket-table-container" style="max-height: 300px;">
+                        <table class="main-table">
+                            <thead>
+                                <tr>
+                                    <th>رقم العملية</th>
+                                    <th>الوقت والتاريخ</th>
+                                    <th>اسم المنتج وعدده / البيان</th>
+                                    <th>السعر</th>
+                                    <th>المنفذ</th>
+                                    <th style="width: 12%; text-align: center;">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reports-transactions-body">
+                                <!-- Dynamic rows inside app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Archives History logs -->
+                <div class="card-panel">
+                    <div class="card-panel-title">
+                        <span>سجل التقارير اليومية المؤرشفة</span>
+                    </div>
+                    
+                    <!-- Archive summary cards list -->
+                    <div id="archive-days-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <!-- Cards injected via JS -->
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+    
+    <!-- Archive Details Modal -->
+    <div id="archive-details-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 900px; width: 95%;">
+            <div class="modal-header">
+                <h3 id="archive-modal-title">تفاصيل أرشيف يوم</h3>
+                <button class="close-btn" onclick="document.getElementById('archive-details-modal').classList.remove('active')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                        <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label" style="font-size:11px;">الوارد (المبيعات)</span>
+                            <span class="stat-card-value" id="archive-modal-total-in" style="font-size:16px;">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                        <div class="stat-card-icon danger" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label" style="font-size:11px;">الصادر (سحوبات ومصروفات)</span>
+                            <span class="stat-card-value" id="archive-modal-total-out" style="font-size:16px;">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                        <div class="stat-card-icon accent" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-scale-balanced"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label" style="font-size:11px;">صافي الأرباح</span>
+                            <span class="stat-card-value" id="archive-modal-net" style="font-size:16px;">0 د.ع</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="basket-table-container">
+                    <table class="main-table">
+                        <thead>
+                            <tr>
+                                <th>رقم العملية</th>
+                                <th>الوقت</th>
+                                <th>اسم المنتج / البيان</th>
+                                <th>السعر</th>
+                                <th>المنفذ</th>
+                                <th style="width: 12%; text-align: center;">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="archive-transactions-body">
+                            <!-- Dynamic rows inside app.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+            <!-- TAB 3.5: MONTHLY REPORTS WORKSPACE -->
+            <div id="monthly-reports-panel" class="workspace-panel">
+                <!-- Monthly Aggregated Reports -->
+                <div class="card-panel">
+                    <div class="card-panel-title">
+                        <span>التقرير المالي والتفصيلي الشهري (لكل شهر)</span>
+                        <div class="d-flex align-center gap-10" style="font-weight: normal;">
+                            <label style="font-size:13px; margin:0;">اختر الشهر:</label>
+                            <select id="monthly-report-select" class="form-control" style="width: 170px; padding: 6px 12px; font-size:13px;" onchange="renderMonthlyBreakdownDetails()">
+                                <option value="">-- اختر الشهر --</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div id="monthly-breakdown-details" style="display:none;">
+                        <!-- Summary stats of selected month -->
+                        <div class="stats-grid" style="margin-bottom: 25px;">
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">إجمالي وارد الشهر (المبيعات)</span>
+                                    <span class="stat-card-value" id="month-total-sales" style="font-size:16px;">0 د.ع</span>
+                                </div>
+                            </div>
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon danger" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">إجمالي المصروفات العامة</span>
+                                    <span class="stat-card-value" id="month-total-expenses" style="font-size:16px;">0 د.ع</span>
+                                </div>
+                            </div>
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon danger" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">إجمالي مسحوبات الرواتب</span>
+                                    <span class="stat-card-value" id="month-total-salaries" style="font-size:16px;">0 د.ع</span>
+                                </div>
+                            </div>
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon accent" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-scale-balanced"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">صافي الربح الشهري</span>
+                                    <span class="stat-card-value" id="month-net-profit" style="font-size:16px;">0 د.ع</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <h4 style="font-size:13px; margin-bottom:12px; color:#fff; border-right:3px solid var(--primary); padding-right:8px;">تفاصيل المبيعات التراكمية للبضائع خلال الشهر</h4>
+                        <div class="basket-table-container">
+                            <table class="main-table">
+                                <thead>
+                                    <tr>
+                                        <th>اسم المنتج / البضاعة</th>
+                                        <th>الكمية الإجمالية المباعة</th>
+                                        <th>متوسط سعر البيع</th>
+                                        <th>إجمالي الإيراد المحقق</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="monthly-items-breakdown-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <h4 style="font-size:13px; margin-top:20px; margin-bottom:12px; color:#fff; border-right:3px solid var(--primary); padding-right:8px;">تقرير الأرباح والمبيعات حسب مصدر المنتج (المورد)</h4>
+                        <div class="basket-table-container">
+                            <table class="main-table">
+                                <thead>
+                                    <tr>
+                                        <th>مصدر المنتج (المورد/الموزع)</th>
+                                        <th>إجمالي القطع المباعة</th>
+                                        <th>إجمالي المبيعات (الوارد)</th>
+                                        <th>إجمالي التكلفة</th>
+                                        <th>صافي الربح للمصدر</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="monthly-sources-breakdown-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: TREASURY RECONCILIATION -->
+            <div id="treasury-panel" class="workspace-panel">
+                <div class="card-panel">
+                    <div class="card-panel-title">مطابقة صندوق المحل الفعلي مع رصيد النظام الحسابي</div>
+                    
+                    <div class="grid-2col">
+                        <!-- Left reconciliation inputs form -->
+                        <div>
+                            <form onsubmit="commitTreasuryReconciliation(event)">
+                                <div class="form-group">
+                                    <label for="treasury-physical-cash">رصيد النقدية الفعلي في الدرج (د.ع)</label>
+                                    <div class="input-icon-wrapper">
+                                        <input type="number" id="treasury-physical-cash" class="form-control" placeholder="قم بعد النقود يدويًا وكتابتها..." required oninput="calculateTreasuryReconciliation()">
+                                        <i class="fa-solid fa-money-bill-1-wave"></i>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="treasury-recon-notes">توضيح أسباب الاختلاف أو العجز (إن وجد)</label>
+                                    <textarea id="treasury-recon-notes" class="form-control" placeholder="مثال: نسيان إدخال مبيعات نكهة معينة بقيمة 15,000 د.ع..." style="height: 100px; resize:none; padding-right:15px;"></textarea>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-accent w-full">
+                                    <i class="fa-solid fa-floppy-disk"></i>
+                                    <span>تسجيل مطابقة الخزينة اليومية</span>
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <!-- Right visual meter comparison results -->
+                        <div style="display:flex; flex-direction:column; justify-content:center;">
+                            <div class="bill-row">
+                                <span style="font-weight:700;">الرصيد الدفتري للنظام (المفترض):</span>
+                                <span id="treasury-system-balance" class="price-value" style="color:var(--primary); font-size:18px;">0 د.ع</span>
+                            </div>
+                            
+                            <div class="treasury-meter-box">
+                                <div class="balance-bar-visual">
+                                    <div class="balance-fill" id="treasury-meter-fill"></div>
+                                    <div class="balance-marker"></div>
+                                </div>
+                                
+                                <div class="difference-output-box match" id="treasury-diff-box">
+                                    <span class="difference-text" id="treasury-diff-status">مطابقة تامة! الرصيد النقدي مطابق تماماً.</span>
+                                    <div class="difference-val" id="treasury-diff-value">0 د.ع</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Treasury Match Logs history -->
+                <div class="card-panel">
+                    <div class="card-panel-title">تاريخ كشف مطابقة ومراجعة الخزنة</div>
+                    <div class="basket-table-container">
+                        <table class="main-table">
+                            <thead>
+                                <tr>
+                                    <th>تاريخ ووقت المطابقة</th>
+                                    <th>الرصيد الدفتري</th>
+                                    <th>الرصيد الفعلي</th>
+                                    <th>الفارق/النتيجة</th>
+                                    <th>أسباب الاختلاف / الملاحظات</th>
+                                    <th>الموظف المسؤول</th>
+                                    <th style="width: 15%; text-align: center;">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="treasury-logs-body">
+                                <!-- Dynamic rows inside app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: INVENTORY WORKSPACE -->
+            <div id="inventory-panel" class="workspace-panel">
+                <!-- Inventory Stats Grid -->
+                <div class="stats-grid" style="margin-bottom: 25px;">
+                    <div class="stat-card" style="border-right: 4px solid var(--primary);">
+                        <div class="stat-card-icon" style="background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); color: var(--primary);"><i class="fa-solid fa-boxes-stacked"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">إجمالي أنواع المنتجات</span>
+                            <span class="stat-card-value" id="inventory-stat-types">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid #10b981;">
+                        <div class="stat-card-icon" style="background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.2); color: #10b981;"><i class="fa-solid fa-cubes-stacked"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">إجمالي كمية المخزن</span>
+                            <span class="stat-card-value" id="inventory-stat-qty">0 قطعة</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid #eab308;">
+                        <div class="stat-card-icon" style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2); color: #eab308;"><i class="fa-solid fa-tags"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">قيمة المخزن بسعر التكلفة</span>
+                            <span class="stat-card-value" id="inventory-stat-cost">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid var(--accent);">
+                        <div class="stat-card-icon accent"><i class="fa-solid fa-sack-dollar"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">القيمة البيعية للمخزن</span>
+                            <span class="stat-card-value" id="inventory-stat-price">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid #ec4899;">
+                        <div class="stat-card-icon" style="background: rgba(236, 72, 153, 0.1); border-color: rgba(236, 72, 153, 0.2); color: #ec4899;"><i class="fa-solid fa-chart-line"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">الأرباح المتوقعة</span>
+                            <span class="stat-card-value" id="inventory-stat-profit">0 د.ع</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-panel">
+                    <div class="card-panel-title">
+                        <span>قائمة العناصر المتوفرة بالمستودع</span>
+                        <div class="d-flex gap-10">
+                            <button class="btn btn-accent btn-sm" onclick="openProductAddModal()">
+                                <i class="fa-solid fa-plus"></i>
+                                <span>إضافة منتج جديد</span>
+                            </button>
+                             <button class="btn btn-danger btn-sm" onclick="clearInventory()">
+                                 <i class="fa-solid fa-trash-can"></i>
+                                 <span>تصفير المخزن بالكامل</span>
+                             </button>
+                         </div>
+                     </div>
+
+                     <!-- Search filter toolbar -->
+                     <div class="search-add-box" style="flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px;">
+                         <div class="input-icon-wrapper" style="flex-grow: 1; max-width: 500px;">
+                             <input type="text" id="inventory-search-input" class="form-control" placeholder="ابحث باسم المنتج أو امسح الباركود الخاص به مباشرة لتعديله..." oninput="filterInventory()">
+                             <i class="fa-solid fa-magnifying-glass"></i>
+                         </div>
+                         <div class="sub-tabs-container">
+                             <button type="button" class="sub-tab-btn active" id="inv-filter-all" onclick="setInventoryFilter('all')">عرض الكل</button>
+                             <button type="button" class="sub-tab-btn" id="inv-filter-low" onclick="setInventoryFilter('low')">مخزون منخفض (≤ 5)</button>
+                             <button type="button" class="sub-tab-btn" id="inv-filter-empty" onclick="setInventoryFilter('empty')">نفذ (0)</button>
+                         </div>
+                     </div>
+
+                     <!-- Inventory items table list -->
+                     <div class="basket-table-container" style="max-height:none;">
+                         <table class="main-table">
+                             <thead>
+                                 <tr>
+                                     <th>رقم الباركود</th>
+                                     <th>اسم المنتج</th>
+                                     <th>سعر التكلفة</th>
+                                     <th>سعر البيع المفرد</th>
+                                     <th>الكمية المتوفرة</th>
+                                     <th>إجراءات</th>
+                                 </tr>
+                             </thead>
+                             <tbody id="inventory-table-body">
+                                 <!-- Dynamic rows inside app.js -->
+                             </tbody>
+                         </table>
+                     </div>
+                 </div>
+             </div>
+
+             <!-- TAB 5.5: NEW PRODUCTS REPORT -->
+             <div id="new-products-report-panel" class="workspace-panel">
+                 <div class="card-panel">
+                     <div class="card-panel-title">
+                         <span>تقرير إضافة المنتجات (سجل التوريدات)</span>
+                         <button class="btn btn-secondary btn-sm" onclick="renderNewProductsReport()"><i class="fa-solid fa-rotate-right"></i> تحديث</button>
+                     </div>
+                     <div class="search-add-box" style="margin-bottom: 15px;">
+                         <div class="input-icon-wrapper" style="width: 100%;">
+                             <input type="text" id="new-products-search" class="form-control" placeholder="ابحث باسم المنتج أو رقم الفاتورة أو المصدر..." oninput="filterNewProductsReport()">
+                             <i class="fa-solid fa-magnifying-glass"></i>
+                         </div>
+                     </div>
+                     <div class="basket-table-container">
+                         <table class="main-table">
+                             <thead>
+                                 <tr>
+                                     <th>تاريخ الإضافة</th>
+                                     <th>اسم المنتج</th>
+                                     <th>الكمية المُدخلة</th>
+                                     <th>رقم الفاتورة</th>
+                                     <th>المصدر / المورد</th>
+                                 </tr>
+                             </thead>
+                             <tbody id="new-products-report-body">
+                                 <!-- Dynamic rows loaded from app.js -->
+                             </tbody>
+                         </table>
+                     </div>
+                 </div>
+             </div>
+
+             <!-- TAB 6: SYSTEM CONFIGURATIONS & ACCESS SETTINGS -->
+             <div id="settings-panel" class="workspace-panel">
+                 <div class="settings-workspace">
+                    <!-- Right Sidebar Navigation tabs -->
+                    <div class="settings-sidebar">
+                        <button type="button" class="settings-nav-btn active" id="setnav-general" onclick="switchSettingsSection('general')">
+                            <i class="fa-solid fa-cash-register"></i>
+                            <div class="settings-nav-info">
+                                <span class="settings-nav-title">إعدادات الصندوق والدرج</span>
+                                <span class="settings-nav-desc">الرصيد الافتتاحي اليومي للدرج</span>
+                            </div>
+                        </button>
+                        <button type="button" class="settings-nav-btn" id="setnav-employees" onclick="switchSettingsSection('employees')">
+                            <i class="fa-solid fa-users-gear"></i>
+                            <div class="settings-nav-info">
+                                <span class="settings-nav-title">إدارة الموظفين والرواتب</span>
+                                <span class="settings-nav-desc">إضافة الموظفين وتعديل رواتبهم</span>
+                            </div>
+                        </button>
+                        <button type="button" class="settings-nav-btn" id="setnav-users" onclick="switchSettingsSection('users')">
+                            <i class="fa-solid fa-user-lock"></i>
+                            <div class="settings-nav-info">
+                                <span class="settings-nav-title">مستخدمي النظام والصلاحيات</span>
+                                <span class="settings-nav-desc">إدارة الكاشيرات وصلاحيات الوصول</span>
+                            </div>
+                        </button>
+                    </div>
+
+                    <!-- Left Content Workspace -->
+                    <div class="settings-content">
+                        <!-- Section: General Drawer Settings -->
+                        <div id="settings-section-general" class="settings-section active">
+                            <div class="card-panel starting-cash-card">
+                                <div class="card-panel-title">إعدادات الرصيد الافتتاحي للدرج</div>
+                                <form onsubmit="saveSystemConfigurations(event)">
+                                    <div class="form-group">
+                                        <label for="setting-starting-cash">رصيد الخزينة الافتتاحي لبداية اليومية (د.ع)</label>
+                                        <div class="input-icon-wrapper">
+                                            <input type="number" id="setting-starting-cash" class="form-control" required>
+                                            <i class="fa-solid fa-money-bill-1-wave"></i>
+                                        </div>
+                                    </div>
+                                    
+                                    <button type="submit" class="btn btn-accent w-full">
+                                        <i class="fa-solid fa-floppy-disk"></i>
+                                        <span>حفظ وتطبيق رصيد البداية</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Section: Employees Management -->
+                        <div id="settings-section-employees" class="settings-section">
+                            <div class="card-panel employees-mgmt-card">
+                                <div class="card-panel-title">إدارة الموظفين والرواتب بالمحل</div>
+                                
+                                <!-- List registered employees -->
+                                <div style="max-height: 250px; overflow-y: auto; margin-bottom: 25px;" id="settings-employees-list">
+                                    <!-- Dynamic rows loaded by app.js -->
+                                </div>
+                                
+                                <!-- Add Employee Form -->
+                                <form onsubmit="addNewEmployee(event)" class="grid-form">
+                                    <h4 class="full-width" style="font-size:14px; margin-bottom:15px; color:#fff;">تسجيل موظف جديد وتحديد راتبه</h4>
+                                    <div class="form-group">
+                                        <label for="new-emp-name">اسم الموظف بالكامل</label>
+                                        <input type="text" id="new-emp-name" class="form-control" placeholder="مثال: حسن جعفر..." required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="new-emp-salary">الراتب الشهري (د.ع)</label>
+                                        <div class="input-icon-wrapper">
+                                            <input type="number" id="new-emp-salary" class="form-control" placeholder="قيمة الراتب بالكامل..." required>
+                                            <i class="fa-solid fa-money-bill-1-wave"></i>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="new-emp-salary-day">يوم استلام الراتب (1-31)</label>
+                                        <div class="input-icon-wrapper">
+                                            <input type="number" id="new-emp-salary-day" class="form-control" placeholder="مثال: 1" min="1" max="31" required>
+                                            <i class="fa-solid fa-calendar-day"></i>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-accent w-full full-width">
+                                        <i class="fa-solid fa-user-plus"></i>
+                                        <span>حفظ وتسجيل الموظف</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Section: Users Management -->
+                        <div id="settings-section-users" class="settings-section">
+                            <div class="card-panel users-mgmt-card">
+                                <div class="card-panel-title">إدارة مستخدمي الكاشير والصلاحيات</div>
+                                
+                                <!-- List users -->
+                                <div style="max-height: 250px; overflow-y: auto; margin-bottom: 25px;" id="settings-users-list">
+                                    <!-- Dynamic rows loaded by app.js -->
+                                </div>
+
+                                <!-- Add new user credentials form -->
+                                <form onsubmit="addNewSystemUser(event)" class="grid-form">
+                                    <h4 class="full-width" style="font-size:14px; margin-bottom:15px; color:#fff;">إنشاء حساب مستخدم جديد</h4>
+                                    <div class="form-group">
+                                        <label for="new-user-fullname">الاسم الكامل للموظف</label>
+                                        <input type="text" id="new-user-fullname" class="form-control" placeholder="اسم الموظف الثلاثي..." required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="new-user-role">نوع الصلاحية والوصول</label>
+                                        <select id="new-user-role" class="form-control" style="padding-right:15px;" required onchange="toggleNewUserPermissions()">
+                                            <option value="cashier">موظف مبيعات (كاشير)</option>
+                                            <option value="manager">مدير النظام (كامل الصلاحيات)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group full-width" id="new-user-perms-group">
+                                        <label>صلاحيات القوائم الجانبية</label>
+                                        <div style="background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; border:1px solid var(--border-color); display:flex; flex-direction:row; flex-wrap:wrap; gap:15px;">
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="invoice" checked> نقطة البيع</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="expenses"> المصروفات</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="reports"> التقارير والأرشيف</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="monthly-reports"> التقارير الشهرية</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="treasury"> المطابقة</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="inventory"> المستودع</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="settings"> الإعدادات</label>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="new-user-uname">اسم المستخدم (بالأجنبي للدخول)</label>
+                                        <input type="text" id="new-user-uname" class="form-control" placeholder="أدخل username..." required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="new-user-pass">كلمة السر</label>
+                                        <input type="password" id="new-user-pass" class="form-control" placeholder="أدخل كلمة مرور..." required autocomplete="new-password">
+                                    </div>
+                                    
+                                    <button type="submit" class="btn btn-accent w-full full-width">
+                                        <i class="fa-solid fa-user-plus"></i>
+                                        <span>تفعيل حساب الموظف الجديد</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 3. MODALS AND DIALOG SYSTEM -->
+    
+    <!-- A. PRODUCT ADD/EDIT MODAL -->
+    <div id="product-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3 id="modal-prod-title">إضافة عنصر جديد للمستودع</h3>
+                <button class="modal-close-btn" onclick="closeProductModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveProduct(event)" class="grid-form">
+                <input type="hidden" id="prod-id">
+                
+                <div class="form-group">
+                    <label for="prod-barcode">رقم الباركود للمنتج</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="prod-barcode" class="form-control" placeholder="امسح الباركود بالقارئ أو اكتبه..." required oninput="checkAndFillProductByBarcode(this.value)">
+                        <i class="fa-solid fa-barcode"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="prod-name">اسم المنتج بالكامل</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="prod-name" class="form-control" placeholder="مثال: نكهة تفاحتين الفاخر..." required>
+                        <i class="fa-solid fa-box"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="prod-cost">سعر التكلفة للمحل (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="prod-cost" class="form-control" placeholder="قيمة الشراء للجملة..." required>
+                        <i class="fa-solid fa-money-bill-1"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="prod-price">سعر بيع المفرد للزبائن (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="prod-price" class="form-control" placeholder="قيمة البيع المسجلة بالفاتورة..." required>
+                        <i class="fa-solid fa-sack-dollar"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="prod-qty">الكمية المدخلة للمستودع</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="prod-qty" class="form-control" placeholder="العدد المتوفر حالياً..." required>
+                        <i class="fa-solid fa-cubes-stacked"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="prod-source">مصدر المنتج (المورد/الموزع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="prod-source" class="form-control" placeholder="مثال: شركة الفاخر، مندوب الجملة...">
+                        <i class="fa-solid fa-truck-fast"></i>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="prod-invoice">رقم الفاتورة (لتقرير الإضافة)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="prod-invoice" class="form-control" placeholder="مثال: فاتورة رقم 12345...">
+                        <i class="fa-solid fa-file-invoice"></i>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-accent w-full mt-10 full-width">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>حفظ بيانات العنصر وتخزينه</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- B. EMPLOYEE LEDGER DETAIL MODAL -->
+    <div id="ledger-detail-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3 id="ledger-detail-title">كشف السحوبات التفصيلي للموظف</h3>
+                <button class="modal-close-btn" onclick="closeLedgerDetailModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; margin-bottom:15px; background:rgba(255,255,255,0.02); padding:12px; border-radius:10px; border:1px solid var(--border-color);">
+                <div>
+                    <span style="font-size:12px; color:var(--text-muted);">إجمالي المسحوبات المقيدة:</span><br>
+                    <strong id="ledger-total-withdrawn" style="font-size:16px; color:var(--danger); font-family:'Inter';">0 د.ع</strong>
+                </div>
+                <div>
+                    <span style="font-size:12px; color:var(--text-muted);">المتبقي المستحق من الراتب:</span><br>
+                    <strong id="ledger-remaining" style="font-size:16px; color:var(--primary); font-family:'Inter';">0 د.ع</strong>
+                </div>
+            </div>
+
+            <div class="basket-table-container" style="max-height: 250px;">
+                <table class="main-table">
+                    <thead>
+                        <tr>
+                            <th>رقم القيد</th>
+                            <th>التاريخ والوقت</th>
+                            <th>المبلغ</th>
+                            <th>السبب والتفاصيل</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employee-withdrawals-body">
+                        <!-- Dynamic rows loaded from app.js -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 15px; text-align: center;">
+                <button class="btn btn-accent" id="btn-pay-salary" onclick="payEmployeeSalary()">
+                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                    <span>تسليم الراتب وتصفير السحوبات</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- C. PRINT RECEIPT TRIGGER DIALOG -->
+    <div id="print-receipt-modal" class="modal-overlay">
+        <div class="modal-content" style="text-align: center; max-width: 400px;">
+            <div class="modal-header" style="justify-content: center;">
+                <h3><i class="fa-solid fa-print" style="color:var(--primary)"></i> تم تسجيل الفاتورة بنجاح</h3>
+            </div>
+            <p style="color: var(--text-muted); font-size:14px; margin: 15px 0;">هل تريد طباعة وصل البيع للزبون (طابعة الفواتير الحرارية)؟</p>
+            <div class="d-flex gap-15 mt-20" style="justify-content: center;">
+                <button class="btn btn-accent" onclick="triggerSystemPrint()">نعم، اطبع الآن</button>
+                <button class="btn btn-secondary" onclick="closePrintModal()">تخطي وإغلاق</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- D. DAILY CLOSURE AUDIT DIALOG (REMOVED) -->
+
+    <!-- E. EDIT TRANSACTION MODAL -->
+    <div id="edit-tx-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3>تعديل بيانات القيد المالي</h3>
+                <button class="modal-close-btn" onclick="closeEditTxModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveEditTx(event)">
+                <input type="hidden" id="edit-tx-id">
+                <div class="form-group">
+                    <label for="edit-tx-amount">المبلغ المالي (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="edit-tx-amount" class="form-control" required>
+                        <i class="fa-solid fa-money-bill-1-wave"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-tx-desc">التفاصيل والبيان الجديد</label>
+                    <textarea id="edit-tx-desc" class="form-control" style="height:80px; resize:none; padding-right:15px;" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-accent w-full mt-10">حفظ وتعديل القيد</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- F. EDIT EMPLOYEE MODAL -->
+    <div id="edit-employee-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3>تعديل بيانات وراتب الموظف</h3>
+                <button class="modal-close-btn" onclick="closeEditEmployeeModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveEditEmployee(event)" class="grid-form">
+                <input type="hidden" id="edit-emp-id">
+                <div class="form-group">
+                    <label for="edit-emp-name">اسم الموظف بالكامل</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="edit-emp-name" class="form-control" required>
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-emp-salary">الراتب الشهري الجديد (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="edit-emp-salary" class="form-control" required>
+                        <i class="fa-solid fa-money-bill-1-wave"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-emp-salary-day">يوم استلام الراتب (1-31)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="edit-emp-salary-day" class="form-control" min="1" max="31" required>
+                        <i class="fa-solid fa-calendar-day"></i>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-accent w-full mt-10 full-width">حفظ وتعديل بيانات الموظف</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- G. EDIT USER MODAL -->
+    <div id="edit-user-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3>تعديل بيانات المستخدم</h3>
+                <button class="modal-close-btn" onclick="closeEditUserModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveEditUser(event)" class="grid-form">
+                <input type="hidden" id="edit-user-index">
+                <div class="form-group">
+                    <label for="edit-user-fullname">الاسم الكامل</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="edit-user-fullname" class="form-control" required>
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-user-uname">اسم المستخدم (Username)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="edit-user-uname" class="form-control" required>
+                        <i class="fa-solid fa-user-gear"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-user-pass">كلمة السر</label>
+                    <div class="input-icon-wrapper">
+                        <input type="password" id="edit-user-pass" class="form-control" required>
+                        <i class="fa-solid fa-lock"></i>
+                    </div>
+                </div>
+                <div class="form-group" id="edit-user-role-group">
+                    <label for="edit-user-role">نوع الصلاحية والوصول</label>
+                    <select id="edit-user-role" class="form-control" style="padding-right:15px;" required onchange="toggleEditUserPermissions()">
+                        <option value="cashier">موظف مبيعات (كاشير)</option>
+                        <option value="manager">مدير النظام (كامل الصلاحيات)</option>
+                    </select>
+                </div>
+                <div class="form-group full-width" id="edit-user-perms-group">
+                    <label>صلاحيات القوائم الجانبية</label>
+                    <div style="background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; border:1px solid var(--border-color); display:flex; flex-direction:row; flex-wrap:wrap; gap:15px;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="invoice"> نقطة البيع</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="expenses"> المصروفات</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="reports"> التقارير والأرشيف</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="monthly-reports"> التقارير الشهرية</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="treasury"> المطابقة</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="inventory"> المستودع</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="settings"> الإعدادات</label>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-accent w-full mt-10 full-width">حفظ وتعديل بيانات الحساب</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- H. EDIT RECONCILIATION MODAL -->
+    <div id="edit-recon-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3>تعديل مطابقة الخزينة</h3>
+                <button class="modal-close-btn" onclick="closeEditReconModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveEditRecon(event)">
+                <input type="hidden" id="edit-recon-id">
+                <div class="form-group">
+                    <label for="edit-recon-physical">الرصيد الفعلي المقيد (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="edit-recon-physical" class="form-control" required>
+                        <i class="fa-solid fa-money-bill-1-wave"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-recon-notes">الملاحظات وأسباب الاختلاف</label>
+                    <textarea id="edit-recon-notes" class="form-control" style="height:80px; resize:none; padding-right:15px;"></textarea>
+                </div>
+                <button type="submit" class="btn btn-accent w-full mt-10">حفظ وتعديل المطابقة</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- I. EDIT ARCHIVE MODAL (REMOVED) -->
+
+
+
+    <!-- 4. HIDDEN INVOICE PRINT ELEMENT (FOR MEDIA PRINT CSS) -->
+    <div id="receipt-print-wrapper"></div>
+
+    <!-- Core App logic scripts -->
+    <script src="app.js?v=4"></script>
+</body>
+</html>
