@@ -356,6 +356,27 @@ function switchTab(tabId) {
     } else if (tabId === 'settings') {
         loadSettingsUI();
     }
+    
+    // Hide mobile menu if open
+    const sidebar = document.getElementById('main-sidebar');
+    const overlay = document.getElementById('mobile-sidebar-overlay');
+    if (sidebar && sidebar.classList.contains('show')) {
+        sidebar.classList.remove('show');
+    }
+    if (overlay && overlay.classList.contains('active')) {
+        overlay.classList.remove('active');
+    }
+}
+
+function toggleMobileMenu() {
+    const sidebar = document.getElementById('main-sidebar');
+    const overlay = document.getElementById('mobile-sidebar-overlay');
+    if (sidebar) {
+        sidebar.classList.toggle('show');
+    }
+    if (overlay) {
+        overlay.classList.toggle('active');
+    }
 }
 
 // --- BASKET & CHECKOUT LOGIC ---

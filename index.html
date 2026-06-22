@@ -63,13 +63,17 @@
     <!-- 2. APPN CONTAINER & SIDEBAR -->
     <div id="app-container" style="display: none;">
         <!-- SIDEBAR NAVIGATION -->
-        <nav class="sidebar">
+        <div id="mobile-sidebar-overlay" class="sidebar-overlay" onclick="toggleMobileMenu()"></div>
+        <nav class="sidebar" id="main-sidebar">
             <div class="sidebar-logo">
                 <i class="fa-solid fa-smoking"></i>
-                <div>
+                <div style="flex-grow: 1;">
                     <h1>حسابات يلا فيب</h1>
                     <p>إدارة المبيعات والمخازن</p>
                 </div>
+                <button class="mobile-only-btn close-sidebar-btn" onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
             </div>
             
             <ul class="nav-menu">
@@ -143,7 +147,12 @@
             <!-- Header bar metrics & time info -->
             <div class="workspace-header">
                 <div class="workspace-title">
-                    <h2 id="workspace-current-title"><i class="fa-solid fa-cash-register"></i> نقطة مبيعات الكاشير</h2>
+                    <h2 id="workspace-current-title">
+                        <button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="mobile-only-btn" title="القائمة">
+                            <i class="fa-solid fa-bars"></i>
+                        </button>
+                        <span><i class="fa-solid fa-cash-register"></i> نقطة مبيعات الكاشير</span>
+                    </h2>
                     <p id="workspace-current-desc">إصدار وصولات الزبائن وتمرير الباركود</p>
                 </div>
                 

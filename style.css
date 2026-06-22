@@ -1874,3 +1874,140 @@ body.light-mode .sub-tab-btn.active {
         grid-column: 1 / -1;
     }
 }
+
+/* ==========================================
+   MOBILE RESPONSIVENESS & SIDEBAR TOGGLE
+   ========================================== */
+.mobile-only-btn {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    font-size: 24px;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+body.light-mode .mobile-only-btn {
+    color: #0f172a;
+}
+
+.mobile-only-btn:hover {
+    color: var(--primary);
+}
+
+.close-sidebar-btn {
+    font-size: 20px;
+    padding: 5px;
+}
+
+/* Sidebar Overlay for Mobile */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 90;
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-overlay.active {
+    opacity: 1;
+}
+
+@media (max-width: 1024px) {
+    .mobile-only-btn {
+        display: block;
+    }
+    
+    .sidebar {
+        position: fixed;
+        right: -300px; /* Hide to the right in RTL */
+        top: 0;
+        bottom: 0;
+        z-index: 100;
+        box-shadow: -5px 0 25px rgba(0,0,0,0.5);
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        height: 100vh;
+        overflow-y: auto;
+    }
+    
+    body.light-mode .sidebar {
+        box-shadow: -5px 0 25px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar.show {
+        right: 0;
+    }
+    
+    .sidebar-overlay {
+        display: block;
+        pointer-events: none;
+    }
+    
+    .sidebar-overlay.active {
+        pointer-events: auto;
+    }
+
+    .main-workspace {
+        padding: 20px;
+    }
+
+    .workspace-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .status-indicator-bar {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 768px) {
+    .grid-2col {
+        grid-template-columns: 1fr;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .card-panel {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 576px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .login-card {
+        padding: 30px 20px;
+        margin: 15px;
+    }
+    
+    .bill-row.highlight .price-value {
+        font-size: 18px;
+    }
+    
+    .main-workspace {
+        padding: 10px;
+    }
+    
+    .workspace-title h2 {
+        font-size: 20px;
+    }
+    
+    .card-panel-title {
+        font-size: 16px;
+    }
+}
