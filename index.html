@@ -485,62 +485,6 @@
 
             </div>
 
-        </div>
-    </div>
-    
-    <!-- Archive Details Modal -->
-    <div id="archive-details-modal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 900px; width: 95%;">
-            <div class="modal-header">
-                <h3 id="archive-modal-title">تفاصيل أرشيف يوم</h3>
-                <button class="close-btn" onclick="document.getElementById('archive-details-modal').classList.remove('active')"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-                <div class="stats-grid" style="margin-bottom: 20px;">
-                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
-                        <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-up"></i></div>
-                        <div class="stat-card-info">
-                            <span class="stat-card-label" style="font-size:11px;">الوارد (المبيعات)</span>
-                            <span class="stat-card-value" id="archive-modal-total-in" style="font-size:16px;">0 د.ع</span>
-                        </div>
-                    </div>
-                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
-                        <div class="stat-card-icon danger" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-down"></i></div>
-                        <div class="stat-card-info">
-                            <span class="stat-card-label" style="font-size:11px;">الصادر (سحوبات ومصروفات)</span>
-                            <span class="stat-card-value" id="archive-modal-total-out" style="font-size:16px;">0 د.ع</span>
-                        </div>
-                    </div>
-                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
-                        <div class="stat-card-icon accent" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-scale-balanced"></i></div>
-                        <div class="stat-card-info">
-                            <span class="stat-card-label" style="font-size:11px;">صافي الأرباح</span>
-                            <span class="stat-card-value" id="archive-modal-net" style="font-size:16px;">0 د.ع</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="basket-table-container">
-                    <table class="main-table">
-                        <thead>
-                            <tr>
-                                <th>رقم العملية</th>
-                                <th>الوقت</th>
-                                <th>اسم المنتج / البيان</th>
-                                <th>السعر</th>
-                                <th>المنفذ</th>
-                                <th style="width: 12%; text-align: center;">الإجراءات</th>
-                            </tr>
-                        </thead>
-                        <tbody id="archive-transactions-body">
-                            <!-- Dynamic rows inside app.js -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
             <!-- TAB 3.5: MONTHLY REPORTS WORKSPACE -->
             <div id="monthly-reports-panel" class="workspace-panel">
                 <!-- Monthly Aggregated Reports -->
@@ -974,6 +918,59 @@
 
     <!-- 3. MODALS AND DIALOG SYSTEM -->
     
+    <!-- Archive Details Modal -->
+    <div id="archive-details-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 900px; width: 95%;">
+            <div class="modal-header">
+                <h3 id="archive-modal-title">تفاصيل أرشيف يوم</h3>
+                <button class="close-btn" onclick="document.getElementById('archive-details-modal').classList.remove('active')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                        <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label" style="font-size:11px;">الوارد (المبيعات)</span>
+                            <span class="stat-card-value" id="archive-modal-total-in" style="font-size:16px;">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                        <div class="stat-card-icon danger" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label" style="font-size:11px;">الصادر (سحوبات ومصروفات)</span>
+                            <span class="stat-card-value" id="archive-modal-total-out" style="font-size:16px;">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                        <div class="stat-card-icon accent" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-scale-balanced"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label" style="font-size:11px;">صافي الأرباح</span>
+                            <span class="stat-card-value" id="archive-modal-net" style="font-size:16px;">0 د.ع</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="basket-table-container">
+                    <table class="main-table">
+                        <thead>
+                            <tr>
+                                <th>رقم العملية</th>
+                                <th>الوقت</th>
+                                <th>اسم المنتج / البيان</th>
+                                <th>السعر</th>
+                                <th>المنفذ</th>
+                                <th style="width: 12%; text-align: center;">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="archive-transactions-body">
+                            <!-- Dynamic rows inside app.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- A. PRODUCT ADD/EDIT MODAL -->
     <div id="product-modal" class="modal-overlay">
         <div class="modal-content" style="max-width: 700px;">

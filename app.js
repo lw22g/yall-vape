@@ -338,6 +338,54 @@ function switchTab(tabId) {
             panel.classList.remove('active');
         }
     });
+
+    // Update Header Title and Description
+    const headerTitle = document.getElementById('workspace-current-title');
+    const headerDesc = document.getElementById('workspace-current-desc');
+    
+    if (headerTitle && headerDesc) {
+        let titleHtml = '';
+        let descText = '';
+        
+        switch (tabId) {
+            case 'invoice':
+                titleHtml = '<span><i class="fa-solid fa-cash-register"></i> نقطة مبيعات الكاشير</span>';
+                descText = 'إصدار وصولات الزبائن وتمرير الباركود';
+                break;
+            case 'expenses':
+                titleHtml = '<span><i class="fa-solid fa-file-invoice-dollar"></i> المصروفات والرواتب</span>';
+                descText = 'تسجيل المصروفات العامة وسلف الموظفين';
+                break;
+            case 'reports':
+                titleHtml = '<span><i class="fa-solid fa-chart-line"></i> التقرير اليومي والأرباح</span>';
+                descText = 'متابعة المبيعات اليومية والأرباح الصافية';
+                break;
+            case 'monthly-reports':
+                titleHtml = '<span><i class="fa-solid fa-calendar-days"></i> التقرير المالي الشهري</span>';
+                descText = 'إحصائيات المبيعات والأرباح الشهرية';
+                break;
+            case 'treasury':
+                titleHtml = '<span><i class="fa-solid fa-vault"></i> جرد ومطابقة الخزينة</span>';
+                descText = 'مطابقة رصيد النظام مع النقدية الفعلية بالدرج';
+                break;
+            case 'inventory':
+                titleHtml = '<span><i class="fa-solid fa-boxes-stacked"></i> المستودع والمخزن</span>';
+                descText = 'إدارة المنتجات، الأسعار، والمخزون';
+                break;
+            case 'settings':
+                titleHtml = '<span><i class="fa-solid fa-sliders"></i> إعدادات الاتصال</span>';
+                descText = 'تكوين ربط قاعدة البيانات السحابية';
+                break;
+            case 'new-products-report':
+                titleHtml = '<span><i class="fa-solid fa-clipboard-list"></i> تقرير إضافة المنتجات</span>';
+                descText = 'سجل المنتجات الجديدة المضافة حديثاً للمخزن';
+                break;
+        }
+        
+        const mobileBtn = '<button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="mobile-only-btn" title="القائمة"><i class="fa-solid fa-bars"></i></button>';
+        headerTitle.innerHTML = mobileBtn + ' ' + titleHtml;
+        headerDesc.innerText = descText;
+    }
     
     // Trigger specific tab loading functions
     if (tabId === 'reports') {
