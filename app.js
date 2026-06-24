@@ -201,10 +201,27 @@ const SyncManager = {
     async syncToFirebase(collectionName, docId, data) {
         if (!this.firestore) return false;
         try {
-            await this.firestore.collection(collectionName).doc(docId).set(data);
+            // Firestore cannot save raw arrays, so we wrap them in an object
+            let firestoreData = data;
+            if (Array.isArray(data)) {
+                firestoreData = { items: data };
+            }
+            await this.firestore.collection(collectionName).doc(docId).set(firestoreData);
             return true;
         } catch (error) {
             console.error("Firebase Sync Error: ", error);
+            return false;
+        }
+    },
+
+    // Delete entity from Firebase Firestore
+    async deleteFromFirebase(collectionName, docId) {
+        if (!this.firestore) return false;
+        try {
+            await this.firestore.collection(collectionName).doc(docId).delete();
+            return true;
+        } catch (error) {
+            console.error("Firebase Delete Error: ", error);
             return false;
         }
     },
@@ -216,6 +233,8 @@ const SyncManager = {
         
         // Run Firebase Sync if configured
         let firebaseCollection = "";
+        let isDelete = false;
+
         switch (type) {
             case "sales": firebaseCollection = "sales_invoices"; break;
             case "expenses": firebaseCollection = "expenses"; break;
@@ -223,10 +242,19 @@ const SyncManager = {
             case "daily_summary": firebaseCollection = "daily_archives"; break;
             case "treasury": firebaseCollection = "treasury_reconciliations"; break;
             case "products": firebaseCollection = "inventory"; break;
+            case "employees": firebaseCollection = "employees_master"; break;
+            case "sales_delete": firebaseCollection = "sales_invoices"; isDelete = true; break;
+            case "expenses_delete": firebaseCollection = "expenses"; isDelete = true; break;
+            case "salaries_delete": firebaseCollection = "salary_transactions"; isDelete = true; break;
+            case "treasury_delete": firebaseCollection = "treasury_reconciliations"; isDelete = true; break;
         }
         
         if (firebaseCollection && docId) {
-            this.syncToFirebase(firebaseCollection, docId, payload);
+            if (isDelete) {
+                this.deleteFromFirebase(firebaseCollection, docId);
+            } else {
+                this.syncToFirebase(firebaseCollection, docId, payload);
+            }
         }
     }
 };
