@@ -108,16 +108,20 @@ const AppState = {
             const savedSettings = localStorage.getItem('vape_settings');
             if (savedSettings) {
                 this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
-                this.settings.firebaseConfig = {
-                    apiKey: "AIzaSyAJNNEzExPYLdpjfOuo6BrTacXDnPZTS7k",
-                    authDomain: "yall-vape.firebaseapp.com",
-                    databaseURL: "https://yall-vape-default-rtdb.asia-southeast1.firebasedatabase.app",
-                    projectId: "yall-vape",
-                    storageBucket: "yall-vape.firebasestorage.app",
-                    messagingSenderId: "248712411874",
-                    appId: "1:248712411874:web:ba0d434d5f02570978fcbb",
-                    measurementId: "G-ZLTER4Z3Y7"
-                };
+                
+                // Ensure firebaseConfig object exists without overwriting user values
+                if (!this.settings.firebaseConfig) {
+                    this.settings.firebaseConfig = {
+                        apiKey: "AIzaSyAJNNEzExPYLdpjfOuo6BrTacXDnPZTS7k",
+                        authDomain: "yall-vape.firebaseapp.com",
+                        databaseURL: "https://yall-vape-default-rtdb.asia-southeast1.firebasedatabase.app",
+                        projectId: "yall-vape",
+                        storageBucket: "yall-vape.firebasestorage.app",
+                        messagingSenderId: "248712411874",
+                        appId: "1:248712411874:web:ba0d434d5f02570978fcbb",
+                        measurementId: "G-ZLTER4Z3Y7"
+                    };
+                }
             }
         }
     },
@@ -171,7 +175,14 @@ const SyncManager = {
                     firebase.initializeApp(conf);
                 }
                 this.firestore = firebase.firestore();
-                console.log("Firebase Firestore Initialized successfully.");
+                try {
+                    this.firestore.settings({
+                        experimentalForceLongPolling: true
+                    });
+                    console.log("Firebase Firestore Initialized and configured with experimentalForceLongPolling successfully.");
+                } catch (settingsErr) {
+                    console.warn("Firestore settings could not be applied (likely already initialized):", settingsErr);
+                }
             } catch (err) {
                 console.error("Firebase init failed: ", err);
             }
@@ -225,6 +236,148 @@ const SyncManager = {
             return false;
         }
     },
+
+    // Fetch single document or collection
+    async fetchFromFirebase(collectionName, docId = null) {
+        if (!this.firestore) return null;
+        try {
+            if (docId) {
+                const doc = await this.firestore.collection(collectionName).doc(docId).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    if (data && data.items !== undefined) return data.items;
+                    return data;
+                }
+                return null;
+            } else {
+                const snapshot = await this.firestore.collection(collectionName).get();
+                if (!snapshot.empty) {
+                    const items = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data.items !== undefined) {
+                            items.push(...data.items);
+                        } else {
+                            items.push(data);
+                        }
+                    });
+                    return items;
+                }
+                return [];
+            }
+        } catch (error) {
+            console.error("Firebase Fetch Error: ", error);
+            return null;
+        }
+    },
+
+    async fetchAllDataFromCloud() {
+        if (!this.firestore) return false;
+        
+        try {
+            const [
+                cloudProducts, 
+                cloudEmployees, 
+                cloudSales,
+                cloudExpenses,
+                cloudSalaries,
+                cloudReconciliations, 
+                cloudArchives,
+                cloudUsers,
+                cloudSettings
+            ] = await Promise.all([
+                this.fetchFromFirebase("inventory", "inventory_master"),
+                this.fetchFromFirebase("employees_master", "employees_master"),
+                this.fetchFromFirebase("sales_invoices"),
+                this.fetchFromFirebase("expenses"),
+                this.fetchFromFirebase("salary_transactions"),
+                this.fetchFromFirebase("treasury_reconciliations"),
+                this.fetchFromFirebase("daily_archives"),
+                this.fetchFromFirebase("system_users", "users_list"),
+                this.fetchFromFirebase("system_config", "settings_config")
+            ]);
+            
+            let hasCloudData = false;
+
+            // Merge or Seed Products
+            if (cloudProducts && Array.isArray(cloudProducts)) { 
+                AppState.products = cloudProducts; 
+                hasCloudData = true; 
+            } else if (AppState.products.length > 0) {
+                this.dispatchSync("products", AppState.products, "inventory_master");
+            }
+
+            // Merge or Seed Employees
+            if (cloudEmployees && Array.isArray(cloudEmployees)) { 
+                AppState.employees = cloudEmployees; 
+                hasCloudData = true; 
+            } else if (AppState.employees.length > 0) {
+                this.dispatchSync("employees", AppState.employees, "employees_master");
+            }
+
+            // Merge or Seed Users
+            if (cloudUsers && Array.isArray(cloudUsers)) { 
+                AppState.users = cloudUsers; 
+                hasCloudData = true; 
+            } else if (AppState.users.length > 0) {
+                this.dispatchSync("users", AppState.users, "users_list");
+            }
+
+            // Merge or Seed Settings
+            if (cloudSettings) { 
+                const currentConfig = AppState.settings.firebaseConfig;
+                AppState.settings = cloudSettings;
+                if (!AppState.settings.firebaseConfig) {
+                    AppState.settings.firebaseConfig = currentConfig;
+                }
+                hasCloudData = true; 
+            } else {
+                this.dispatchSync("settings", AppState.settings, "settings_config");
+            }
+            
+            // Transactions Merge
+            let allCloudTransactions = [];
+            if (cloudSales && Array.isArray(cloudSales)) { allCloudTransactions.push(...cloudSales); hasCloudData = true; }
+            if (cloudExpenses && Array.isArray(cloudExpenses)) { allCloudTransactions.push(...cloudExpenses); hasCloudData = true; }
+            if (cloudSalaries && Array.isArray(cloudSalaries)) { allCloudTransactions.push(...cloudSalaries); hasCloudData = true; }
+            
+            if (allCloudTransactions.length > 0) {
+                allCloudTransactions.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                AppState.transactions = allCloudTransactions;
+            } else if (AppState.transactions.length > 0) {
+                // Seed local transactions to cloud if cloud has no transactions
+                AppState.transactions.forEach(t => {
+                    if (t.type === 'sale') this.dispatchSync("sales", t, t.id);
+                    if (t.type === 'expense') this.dispatchSync("expenses", t, t.id);
+                    if (t.type === 'salary') this.dispatchSync("salaries", t, t.id);
+                });
+            }
+
+            // Merge or Seed Reconciliations
+            if (cloudReconciliations && Array.isArray(cloudReconciliations)) { 
+                cloudReconciliations.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                AppState.reconciliations = cloudReconciliations; 
+                hasCloudData = true; 
+            } else if (AppState.reconciliations.length > 0) {
+                AppState.reconciliations.forEach(r => this.dispatchSync("treasury", r, r.id));
+            }
+
+            // Merge or Seed Archives
+            if (cloudArchives && Array.isArray(cloudArchives)) { 
+                cloudArchives.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                AppState.archives = cloudArchives; 
+                hasCloudData = true; 
+            } else if (AppState.archives.length > 0) {
+                AppState.archives.forEach(a => this.dispatchSync("daily_summary", a, a.archiveId));
+            }
+            
+            AppState.saveAll();
+            return hasCloudData;
+        } catch (error) {
+            console.error("Cloud Fetch Failed: ", error);
+            return false;
+        }
+    },
     
     // Aggregate synchronization wrapper
     async dispatchSync(type, payload, docId) {
@@ -243,6 +396,8 @@ const SyncManager = {
             case "treasury": firebaseCollection = "treasury_reconciliations"; break;
             case "products": firebaseCollection = "inventory"; break;
             case "employees": firebaseCollection = "employees_master"; break;
+            case "users": firebaseCollection = "system_users"; break;
+            case "settings": firebaseCollection = "system_config"; break;
             case "sales_delete": firebaseCollection = "sales_invoices"; isDelete = true; break;
             case "expenses_delete": firebaseCollection = "expenses"; isDelete = true; break;
             case "salaries_delete": firebaseCollection = "salary_transactions"; isDelete = true; break;
@@ -3120,6 +3275,8 @@ function saveSystemConfigurations(e) {
     AppState.settings.startingCash = startingCash;
     AppState.saveAll();
     
+    SyncManager.dispatchSync("settings", AppState.settings, "settings_config");
+    
     alert("تم حفظ الرصيد الافتتاحي للدرج بنجاح.");
 }
 
@@ -3174,6 +3331,8 @@ function addNewEmployee(e) {
     AppState.employees.push(newEmp);
     AppState.saveAll();
     
+    SyncManager.dispatchSync("employees", AppState.employees, "employees_master");
+    
     // Clear form
     document.getElementById('new-emp-name').value = '';
     document.getElementById('new-emp-salary').value = '';
@@ -3195,6 +3354,8 @@ function deleteEmployee(index) {
     
     AppState.employees.splice(index, 1);
     AppState.saveAll();
+    
+    SyncManager.dispatchSync("employees", AppState.employees, "employees_master");
     
     playBeep('success');
     renderSettingsEmployeesList();
@@ -3305,6 +3466,8 @@ function addNewSystemUser(e) {
     AppState.users.push({ name, username, password: pass, role, permissions });
     AppState.saveAll();
     
+    SyncManager.dispatchSync("users", AppState.users, "users_list");
+    
     // Clear forms
     document.getElementById('new-user-fullname').value = '';
     document.getElementById('new-user-uname').value = '';
@@ -3320,6 +3483,8 @@ function deleteSystemUser(index) {
     
     AppState.users.splice(index, 1);
     AppState.saveAll();
+    
+    SyncManager.dispatchSync("users", AppState.users, "users_list");
     
     playBeep('success');
     renderSettingsUsersList();
@@ -3418,6 +3583,8 @@ function handleSaveEditUser(e) {
     
     AppState.saveAll();
     
+    SyncManager.dispatchSync("users", AppState.users, "users_list");
+    
     // If it was the logged in user, update current session user info
     if (wasSelf) {
         AppState.currentUser = usr;
@@ -3474,7 +3641,14 @@ function handleLogin(e) {
                     item.style.display = 'block';
                 }
             });
-            switchTab('invoice');
+            
+            if (perms.includes('invoice')) {
+                switchTab('invoice');
+            } else if (perms.length > 0) {
+                switchTab(perms[0]);
+            } else {
+                document.querySelectorAll('.workspace-panel').forEach(p => p.classList.remove('active'));
+            }
         } else {
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.style.display = 'block';
@@ -3509,10 +3683,19 @@ function handleLogout() {
 }
 
 // Check active session on initial load
-function checkSession() {
+async function checkSession() {
     AppState.loadAll();
     SyncManager.init();
     
+    const overlay = document.getElementById('cloud-sync-overlay');
+    if (AppState.settings.firebaseConfig && typeof firebase !== 'undefined') {
+        if (overlay) overlay.style.display = 'flex';
+        await SyncManager.fetchAllDataFromCloud();
+        if (overlay) overlay.style.display = 'none';
+    } else {
+        if (overlay) overlay.style.display = 'none';
+    }
+
     const savedUser = sessionStorage.getItem('vape_current_user');
     if (savedUser) {
         const user = JSON.parse(savedUser);

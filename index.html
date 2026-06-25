@@ -26,8 +26,15 @@
     <!-- Barcode scan visual feedback flash -->
     <div id="barcode-flash-overlay"></div>
 
+    <!-- Cloud Sync Overlay -->
+    <div id="cloud-sync-overlay" style="display: flex; position: fixed; inset: 0; background: #0f172a; z-index: 99999; flex-direction: column; align-items: center; justify-content: center; color: white; font-family: 'Cairo', sans-serif;">
+        <i class="fa-solid fa-cloud-arrow-down fa-beat-fade" style="font-size: 3rem; color: #3b82f6; margin-bottom: 20px;"></i>
+        <h2 style="margin-bottom: 10px;">جاري الاتصال السحابي</h2>
+        <p style="color: #94a3b8; font-size: 14px;">يتم الآن استرجاع ومزامنة البيانات، يرجى الانتظار...</p>
+    </div>
+
     <!-- 1. LOGIN SCREEN -->
-    <div id="login-container">
+    <div id="login-container" style="display: none;">
         <div class="login-card">
             <div class="login-logo">
                 <i class="fa-solid fa-smoking"></i>
@@ -1252,6 +1259,6 @@
     <div id="receipt-print-wrapper"></div>
 
     <!-- Core App logic scripts -->
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>
