@@ -3751,6 +3751,9 @@ async function checkSession() {
     
     // Check for employee salaries
     checkSalaryNotifications();
+    
+    // Catch up any missed auto-archives from previous days
+    catchUpMissedArchives();
 }
 
 // Check and render reconciliation banner
@@ -3910,6 +3913,61 @@ function processDailyResetAndArchive(dateStrOverride = null, auto = false) {
     }
 }
 
+// Catch up missed archives if the system was closed at midnight
+function catchUpMissedArchives() {
+    const today = new Date();
+    const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    
+    const unarchivedDates = new Set();
+    
+    if (AppState.transactions && AppState.transactions.length > 0) {
+        AppState.transactions.forEach(t => {
+            const d = new Date(t.timestamp || Date.now());
+            const tStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            
+            // If the transaction date is strictly less than today (meaning it's from yesterday or before)
+            if (tStr < todayStr) {
+                const existing = AppState.archives.find(a => a.dateStr === tStr);
+                if (!existing) {
+                    unarchivedDates.add(tStr);
+                }
+            }
+        });
+    }
+    
+    if (unarchivedDates.size > 0) {
+        unarchivedDates.forEach(dateStr => {
+            console.log("Auto-archiving missed day: ", dateStr);
+            processDailyResetAndArchive(dateStr, false);
+        });
+    }
+}
+
+function showReconReminder() {
+    playBeep('error');
+    const banner = document.createElement('div');
+    banner.style.position = 'fixed';
+    banner.style.top = '20px';
+    banner.style.left = '50%';
+    banner.style.transform = 'translateX(-50%)';
+    banner.style.background = 'var(--danger)';
+    banner.style.color = '#fff';
+    banner.style.padding = '20px 30px';
+    banner.style.borderRadius = '15px';
+    banner.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
+    banner.style.zIndex = '999999';
+    banner.style.fontFamily = 'Inter, Cairo, sans-serif';
+    banner.style.textAlign = 'center';
+    banner.innerHTML = `
+        <i class="fa-solid fa-triangle-exclamation" style="font-size:2rem; margin-bottom:10px;"></i>
+        <h3 style="margin:0 0 10px 0;">تنبيه المطابقة اليومية</h3>
+        <p style="margin:0 0 15px 0;">أوشك اليوم على الانتهاء. يرجى الذهاب فوراً إلى شاشة <strong>جرد ومطابقة الخزينة</strong> لإدخال المبلغ الفعلي الموجود في المحل.</p>
+        <button onclick="this.parentElement.remove(); switchTab('treasury');" style="background:#fff; color:var(--danger); border:none; padding:8px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">الذهاب للمطابقة الآن</button>
+        <button onclick="this.parentElement.remove();" style="background:transparent; color:#fff; border:1px solid #fff; padding:8px 20px; border-radius:5px; cursor:pointer; margin-right:10px;">إغلاق</button>
+    `;
+    document.body.appendChild(banner);
+}
+
 // Live Time Clocks
 function initClocks() {
     function tick() {
@@ -3922,6 +3980,14 @@ function initClocks() {
         }
         if (dateSpan) {
             dateSpan.innerText = now.toLocaleDateString('ar-IQ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+        
+        // Treasury reconciliation reminder at 23:55:00
+        if (now.getHours() === 23 && now.getMinutes() === 55 && (now.getSeconds() === 0 || now.getSeconds() === 1)) {
+            if (!sessionStorage.getItem('vape_recon_reminder_' + now.toLocaleDateString('en-US'))) {
+                sessionStorage.setItem('vape_recon_reminder_' + now.toLocaleDateString('en-US'), 'true');
+                showReconReminder();
+            }
         }
         
         // Auto archive at exactly 00:00:00 or 00:00:01
