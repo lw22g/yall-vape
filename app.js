@@ -245,7 +245,7 @@ const SyncManager = {
                 const doc = await this.firestore.collection(collectionName).doc(docId).get();
                 if (doc.exists) {
                     const data = doc.data();
-                    if (data && data.items !== undefined) return data.items;
+                    if (data && data.items !== undefined && Object.keys(data).length === 1) return data.items;
                     return data;
                 }
                 return null;
@@ -255,7 +255,7 @@ const SyncManager = {
                     const items = [];
                     snapshot.forEach(doc => {
                         const data = doc.data();
-                        if (data.items !== undefined) {
+                        if (data.items !== undefined && Object.keys(data).length === 1) {
                             items.push(...data.items);
                         } else {
                             items.push(data);
