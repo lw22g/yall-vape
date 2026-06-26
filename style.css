@@ -43,6 +43,23 @@
     scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
+/* Custom WebKit Scrollbars for consistent premium lounge styling */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(249, 115, 22, 0.35);
+}
+
 body {
     background-color: var(--bg-base);
     color: var(--text-main);
@@ -536,6 +553,13 @@ body {
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
     margin-bottom: 30px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-panel:hover {
+    box-shadow: var(--shadow-md);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
 }
 
 .card-panel-title {
@@ -2010,4 +2034,47 @@ body.light-mode .mobile-only-btn {
     .card-panel-title {
         font-size: 16px;
     }
+}
+
+/* User cards grid for quick switcher login */
+.login-users-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.user-login-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 16px 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.user-login-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+}
+
+.user-login-card:hover .avatar {
+    border-color: var(--accent) !important;
+    background: rgba(249, 115, 22, 0.15) !important;
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.25);
+    transform: scale(1.05);
+}
+
+body.light-mode .user-login-card {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+body.light-mode .user-login-card:hover {
+    background: rgba(0, 0, 0, 0.05);
 }

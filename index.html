@@ -35,35 +35,50 @@
 
     <!-- 1. LOGIN SCREEN -->
     <div id="login-container" style="display: none;">
-        <div class="login-card">
+        <div class="login-card" style="max-width: 480px; width: 95%;">
             <div class="login-logo">
                 <i class="fa-solid fa-smoking"></i>
             </div>
             <h2>نظام محاسبة يلا فيب</h2>
             <p>أراكيل، فيب ومستلزمات التدخين الإلكتروني</p>
             
+            <!-- User cards grid for quick switcher login -->
+            <div id="login-users-grid" class="login-users-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 15px; margin: 20px 0;"></div>
+            
             <form onsubmit="handleLogin(event)">
-                <div class="form-group">
+                <!-- Username field group - hidden by default unless manually entering -->
+                <div class="form-group" id="login-uname-group" style="display: none;">
                     <label for="login-uname">اسم المستخدم</label>
                     <div class="input-icon-wrapper">
-                        <input type="text" id="login-uname" class="form-control" placeholder="أدخل اسم المستخدم..." required autocomplete="username">
+                        <input type="text" id="login-uname" class="form-control" placeholder="أدخل اسم المستخدم..." autocomplete="username">
                         <i class="fa-regular fa-user"></i>
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="login-pass">كلمة المرور</label>
-                    <div class="input-icon-wrapper">
-                        <input type="password" id="login-pass" class="form-control" placeholder="أدخل كلمة المرور..." required autocomplete="current-password">
-                        <i class="fa-solid fa-lock"></i>
+                <!-- Password field group - hidden by default until card is selected -->
+                <div id="login-pass-group" style="display: none; margin-top: 10px;">
+                    <div class="form-group">
+                        <label for="login-pass" id="login-pass-label">رمز المرور للحساب المختار</label>
+                        <div class="input-icon-wrapper">
+                            <input type="password" id="login-pass" class="form-control" placeholder="أدخل رمز المرور..." autocomplete="current-password">
+                            <i class="fa-solid fa-lock"></i>
+                        </div>
                     </div>
+                    
+                    <button type="submit" class="btn-primary" style="margin-top: 15px;">
+                        <span>تسجيل الدخول للنظام</span>
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    
+                    <button type="button" class="btn btn-secondary w-full" style="margin-top: 8px; font-size: 12px; height: 38px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color);" onclick="resetLoginScreen()">
+                        <span>العودة لاختيار الموظف</span>
+                    </button>
                 </div>
-                
-                <button type="submit" class="btn-primary" style="margin-top: 15px;">
-                    <span>تسجيل الدخول للنظام</span>
-                    <i class="fa-solid fa-arrow-left"></i>
-                </button>
             </form>
+            
+            <button type="button" id="manual-login-toggle" class="btn-text" style="margin-top: 15px; font-size: 13px; color: var(--accent); cursor: pointer; border: none; background: none; font-family:'Cairo'; font-weight:700;" onclick="showManualLogin()">
+                <span>أو تسجيل الدخول يدوياً باسم آخر</span>
+            </button>
         </div>
     </div>
 
@@ -112,6 +127,12 @@
                     <a href="javascript:void(0)" onclick="switchTab('treasury')">
                         <i class="fa-solid fa-vault"></i>
                         <span>جرد ومطابقة الخزينة</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-tab="debts">
+                    <a href="javascript:void(0)" onclick="switchTab('debts')">
+                        <i class="fa-solid fa-hand-holding-hand"></i>
+                        <span>قائمة الديون والذمم</span>
                     </a>
                 </li>
                 <li class="nav-item" data-tab="inventory">
@@ -259,6 +280,19 @@
                             </div>
                             
                             <div class="form-group" style="margin-bottom: 5px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                    <input type="checkbox" id="is-credit-sale" onchange="toggleCreditFields()">
+                                    <span>بيع بالدين (ذمم مدينة)</span>
+                                </label>
+                            </div>
+                            
+                            <div id="credit-fields" style="display: none; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border-color);">
+                                <div class="form-group" style="margin-bottom: 5px;">
+                                    <input type="text" id="credit-customer-name" class="form-control" placeholder="اسم الشخص المطلوب بالدين..." style="font-size: 12px; padding: 6px 10px;">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group" style="margin-bottom: 5px;">
                                 <label for="invoice-discount">الخصم الممنوح (د.ع)</label>
                                 <div class="input-icon-wrapper">
                                     <input type="number" id="invoice-discount" class="form-control" placeholder="0" min="0" value="0" oninput="handleDiscountChange()">
@@ -274,6 +308,10 @@
                             <button class="btn btn-accent w-full mt-20" onclick="processCheckout()">
                                 <i class="fa-solid fa-circle-check"></i>
                                 <span>إصدار الفاتورة وتأكيد القبض</span>
+                            </button>
+                            <button type="button" class="btn btn-secondary w-full mt-10" onclick="openReplaceModal()" style="border: 1px dashed var(--accent); color: var(--accent); background: rgba(249, 115, 22, 0.05); display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; height: 42px;">
+                                <i class="fa-solid fa-right-left"></i>
+                                <span>استبدال منتج مباع</span>
                             </button>
                         </div>
                     </div>
@@ -326,9 +364,15 @@
                                         <option value="">-- اختر الموظف --</option>
                                     </select>
                                 </div>
-                                <div class="form-group">
-                                    <label for="salary-amount">المبلغ المسحوب (د.ع)</label>
-                                    <input type="number" id="salary-amount" class="form-control" placeholder="أدخل مبلغ السحبة..." required>
+                                <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                                    <div class="form-group">
+                                        <label for="salary-amount-out">المبلغ الصادر (سحب من المحل)</label>
+                                        <input type="number" id="salary-amount-out" class="form-control" placeholder="صادر للرواتب/السلف...">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="salary-amount-in">المبلغ الوارد (إرجاع للمحل)</label>
+                                        <input type="number" id="salary-amount-in" class="form-control" placeholder="وارد كـ إرجاع...">
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="salary-desc">ملاحظات وسبب السحب</label>
@@ -537,6 +581,20 @@
                                     <span class="stat-card-value" id="month-net-profit" style="font-size:16px;">0 د.ع</span>
                                 </div>
                             </div>
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px; background: rgba(234, 179, 8, 0.1); color: #eab308; border-color: rgba(234, 179, 8, 0.2);"><i class="fa-solid fa-hand-holding-hand"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">مبيعات الآجل (بالدين)</span>
+                                    <span class="stat-card-value" id="month-credit-sales" style="font-size:16px;">0 د.ع</span>
+                                </div>
+                            </div>
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px; background: rgba(16, 185, 129, 0.1); color: #10b981; border-color: rgba(16, 185, 129, 0.2);"><i class="fa-solid fa-circle-dollar-to-slot"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">تسديدات الديون المحصلة</span>
+                                    <span class="stat-card-value" id="month-debt-repayments" style="font-size:16px;">0 د.ع</span>
+                                </div>
+                            </div>
                         </div>
                         
                         <h4 style="font-size:13px; margin-bottom:12px; color:#fff; border-right:3px solid var(--primary); padding-right:8px;">تفاصيل المبيعات التراكمية للبضائع خلال الشهر</h4>
@@ -648,6 +706,108 @@
                                 <!-- Dynamic rows inside app.js -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4.5: DEBTS AND REPAYMENTS WORKSPACE -->
+            <div id="debts-panel" class="workspace-panel">
+                <!-- Debts stats and tools -->
+                <div class="stats-grid" style="margin-bottom: 25px;">
+                    <div class="stat-card" style="border-right: 4px solid var(--accent);">
+                        <div class="stat-card-icon accent"><i class="fa-solid fa-hand-holding-hand"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">إجمالي الديون المستحقة</span>
+                            <span class="stat-card-value" id="debts-stat-total">0 د.ع</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" style="border-right: 4px solid var(--primary);">
+                        <div class="stat-card-icon" style="background: rgba(59, 130, 246, 0.1); color: var(--primary);"><i class="fa-solid fa-users"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">عدد المدينين النشطين</span>
+                            <span class="stat-card-value" id="debts-stat-count">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-2col">
+                    <!-- Left: Debtors list -->
+                    <div class="card-panel">
+                        <div class="card-panel-title">قائمة الأشخاص المطلوبين</div>
+                        <div class="search-add-box" style="margin-bottom:15px;">
+                            <div class="input-icon-wrapper w-full">
+                                <input type="text" id="debts-search-input" class="form-control" placeholder="ابحث عن شخص بالاسم..." oninput="renderDebtsList()">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </div>
+                        </div>
+                        <div class="basket-table-container" style="max-height: none;">
+                            <table class="main-table">
+                                <thead>
+                                    <tr>
+                                        <th>اسم الشخص</th>
+                                        <th>مبلغ الدين المتبقي</th>
+                                        <th style="width: 25%; text-align: center;">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="debts-list-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right: Selected debtor details & pay debt form -->
+                    <div class="card-panel" id="debtor-detail-panel" style="display: none;">
+                        <div class="card-panel-title">تفاصيل حساب المدين: <span id="debtor-name-display" style="color:var(--accent);">--</span></div>
+                        
+                        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px;">
+                            <div class="bill-row">
+                                <span>إجمالي الدين المتبقي:</span>
+                                <strong id="debtor-balance-display" class="price-value" style="color:var(--danger); font-size:18px;">0 د.ع</strong>
+                            </div>
+                        </div>
+
+                        <!-- Settle Debt Form -->
+                        <form onsubmit="handleRepayDebt(event)" style="margin-bottom: 20px;">
+                            <input type="hidden" id="debtor-id-input">
+                            <div class="form-group">
+                                <label for="repay-amount">المبلغ المدفوع للتسديد (د.ع)</label>
+                                <div class="input-icon-wrapper">
+                                    <input type="number" id="repay-amount" class="form-control" placeholder="أدخل المبلغ..." required>
+                                    <i class="fa-solid fa-money-bill-1-wave"></i>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="repay-notes">ملاحظات التسديد (تفاصيل إضافية)</label>
+                                <input type="text" id="repay-notes" class="form-control" placeholder="مثال: تسديد دفعة أولى، تسديد كامل...">
+                            </div>
+                            <button type="submit" class="btn btn-accent w-full" style="height: 40px; font-weight: 700;">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span>تسجيل عملية التسديد وقبض المبلغ</span>
+                            </button>
+                        </form>
+
+                        <div class="card-panel-title" style="font-size: 14px; margin-bottom: 10px;">سجل الحركات والتسديدات للمدين</div>
+                        <div class="basket-table-container" style="max-height: 200px;">
+                            <table class="main-table" style="font-size: 12px;">
+                                <thead>
+                                    <tr>
+                                        <th>التاريخ والوقت</th>
+                                        <th>الحركة</th>
+                                        <th>المبلغ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="debtor-history-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Default placeholder -->
+                    <div class="card-panel" id="debtor-empty-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; color: var(--text-muted);">
+                        <i class="fa-solid fa-hand-holding-hand" style="font-size: 3rem; margin-bottom: 15px; opacity: 0.3;"></i>
+                        <p>اختر شخصاً من القائمة الجانبية لعرض تفاصيل دينه وتسجيل الدفعات.</p>
                     </div>
                 </div>
             </div>
@@ -807,7 +967,7 @@
                         <!-- Section: General Drawer Settings -->
                         <div id="settings-section-general" class="settings-section active">
                             <div class="card-panel starting-cash-card">
-                                <div class="card-panel-title">إعدادات الرصيد الافتتاحي للدرج</div>
+                                <div class="card-panel-title">إعدادات الدرج وسعر الصرف</div>
                                 <form onsubmit="saveSystemConfigurations(event)">
                                     <div class="form-group">
                                         <label for="setting-starting-cash">رصيد الخزينة الافتتاحي لبداية اليومية (د.ع)</label>
@@ -817,9 +977,17 @@
                                         </div>
                                     </div>
                                     
-                                    <button type="submit" class="btn btn-accent w-full">
+                                    <div class="form-group" style="margin-top: 15px;">
+                                        <label for="setting-usd-exchange-rate">سعر صرف الدولار مقابل الدينار اليومي (د.ع)</label>
+                                        <div class="input-icon-wrapper">
+                                            <input type="number" id="setting-usd-exchange-rate" class="form-control" value="1500" required>
+                                            <i class="fa-solid fa-dollar-sign"></i>
+                                        </div>
+                                    </div>
+                                    
+                                    <button type="submit" class="btn btn-accent w-full" style="margin-top: 15px;">
                                         <i class="fa-solid fa-floppy-disk"></i>
-                                        <span>حفظ وتطبيق رصيد البداية</span>
+                                        <span>حفظ وتطبيق الإعدادات وسعر الصرف</span>
                                     </button>
                                 </form>
                             </div>
@@ -896,6 +1064,7 @@
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="reports"> التقارير والأرشيف</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="monthly-reports"> التقارير الشهرية</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="treasury"> المطابقة</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="debts" checked> الديون والذمم</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="inventory"> المستودع</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="settings"> الإعدادات</label>
                                         </div>
@@ -930,7 +1099,13 @@
         <div class="modal-content" style="max-width: 900px; width: 95%;">
             <div class="modal-header">
                 <h3 id="archive-modal-title">تفاصيل أرشيف يوم</h3>
-                <button class="close-btn" onclick="document.getElementById('archive-details-modal').classList.remove('active')"><i class="fa-solid fa-xmark"></i></button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="archive-modal-print-btn" onclick="printArchivedReportFromModal()" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-weight: bold; border-radius: 8px;">
+                        <i class="fa-solid fa-print"></i>
+                        <span>طباعة التقرير</span>
+                    </button>
+                    <button class="close-btn" onclick="document.getElementById('archive-details-modal').classList.remove('active')"><i class="fa-solid fa-xmark"></i></button>
+                </div>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <div class="stats-grid" style="margin-bottom: 20px;">
@@ -1004,11 +1179,20 @@
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="prod-cost">سعر التكلفة للمحل (د.ع)</label>
-                    <div class="input-icon-wrapper">
-                        <input type="number" id="prod-cost" class="form-control" placeholder="قيمة الشراء للجملة..." required>
-                        <i class="fa-solid fa-money-bill-1"></i>
+                <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label for="prod-cost-usd">سعر التكلفة بالدولار ($)</label>
+                        <div class="input-icon-wrapper">
+                            <input type="number" step="0.01" id="prod-cost-usd" class="form-control" placeholder="اختياري..." oninput="convertUsdToIqdCost()">
+                            <i class="fa-solid fa-dollar-sign"></i>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="prod-cost">سعر التكلفة (د.ع)</label>
+                        <div class="input-icon-wrapper">
+                            <input type="number" id="prod-cost" class="form-control" placeholder="قيمة الشراء للجملة..." required>
+                            <i class="fa-solid fa-money-bill-1"></i>
+                        </div>
                     </div>
                 </div>
                 
@@ -1020,11 +1204,20 @@
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="prod-qty">الكمية المدخلة للمستودع</label>
-                    <div class="input-icon-wrapper">
-                        <input type="number" id="prod-qty" class="form-control" placeholder="العدد المتوفر حالياً..." required>
-                        <i class="fa-solid fa-cubes-stacked"></i>
+                <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;" id="prod-qty-grid">
+                    <div class="form-group" id="prod-qty-group">
+                        <label for="prod-qty" id="prod-qty-label">الكمية المدخلة للمستودع</label>
+                        <div class="input-icon-wrapper">
+                            <input type="number" id="prod-qty" class="form-control" placeholder="العدد المتوفر حالياً..." required>
+                            <i class="fa-solid fa-cubes-stacked"></i>
+                        </div>
+                    </div>
+                    <div class="form-group" id="prod-new-qty-group" style="display: none;">
+                        <label for="prod-new-qty">الكمية الجديدة المضافة</label>
+                        <div class="input-icon-wrapper" style="border: 1px dashed var(--accent); border-radius: 8px;">
+                            <input type="number" id="prod-new-qty" class="form-control" placeholder="كمية إضافية..." value="0">
+                            <i class="fa-solid fa-plus" style="color: var(--accent);"></i>
+                        </div>
                     </div>
                 </div>
                 
@@ -1217,6 +1410,7 @@
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="reports"> التقارير والأرشيف</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="monthly-reports"> التقارير الشهرية</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="treasury"> المطابقة</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="debts"> الديون والذمم</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="inventory"> المستودع</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="settings"> الإعدادات</label>
                     </div>
@@ -1252,6 +1446,45 @@
     </div>
 
     <!-- I. EDIT ARCHIVE MODAL (REMOVED) -->
+
+    <!-- J. REPLACE PRODUCT MODAL -->
+    <div id="replace-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 460px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-right-left" style="color:var(--accent)"></i> استبدال منتج مباع</h3>
+                <button type="button" class="modal-close-btn" onclick="closeReplaceModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleReplaceProduct(event)" class="grid-form" style="display:flex; flex-direction:column; gap:15px; margin-top:15px;">
+                <div class="form-group" style="text-align: right; margin-bottom: 0;">
+                    <label for="replace-old-barcode">باركود المنتج القديم (المرتجع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="replace-old-barcode" class="form-control" placeholder="امسح باركود المنتج القديم..." required oninput="validateReplaceOldProduct(this.value)">
+                        <i class="fa-solid fa-barcode"></i>
+                    </div>
+                    <div id="replace-old-details" style="font-size:12px; margin-top:5px; padding: 4px 8px; border-radius: 4px; display:none;"></div>
+                </div>
+                
+                <div class="form-group" style="text-align: right; margin-bottom: 0;">
+                    <label for="replace-new-barcode">باركود المنتج الجديد (البديل)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="text" id="replace-new-barcode" class="form-control" placeholder="امسح باركود المنتج الجديد..." required oninput="validateReplaceNewProduct(this.value)">
+                        <i class="fa-solid fa-barcode"></i>
+                    </div>
+                    <div id="replace-new-details" style="font-size:12px; margin-top:5px; padding: 4px 8px; border-radius: 4px; display:none;"></div>
+                </div>
+
+                <div id="replace-summary-box" style="display:none; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); padding:15px; border-radius:12px; margin-top:10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>فرق السعر المطلوبة:</span>
+                        <strong id="replace-difference-display" class="price-value" style="font-size:18px;">0 د.ع</strong>
+                    </div>
+                    <div id="replace-direction-note" style="font-size:12px; color:var(--text-muted); text-align:center; margin-top:8px; border-top: 1px dashed rgba(255,255,255,0.05); padding-top:8px;"></div>
+                </div>
+                
+                <button type="submit" class="btn btn-accent w-full" style="margin-top: 15px; height: 42px; font-weight: 700;">تأكيد عملية الاستبدال والترحيل</button>
+            </form>
+        </div>
+    </div>
 
 
 

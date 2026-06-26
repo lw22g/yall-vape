@@ -44,6 +44,7 @@ const AppState = {
     archives: [],
     settings: {
         startingCash: 150000,
+        usdExchangeRate: 1500,
         firebaseConfig: {
             apiKey: "AIzaSyAJNNEzExPYLdpjfOuo6BrTacXDnPZTS7k",
             authDomain: "yall-vape.firebaseapp.com",
@@ -70,9 +71,9 @@ const AppState = {
         
         // System Users (Managers & Cashiers)
         this.users = [
-            { username: "admin", name: "أبو فهد - المدير العام", password: "admin", role: "manager", permissions: ['invoice', 'expenses', 'reports', 'monthly-reports', 'treasury', 'inventory', 'settings'] },
-            { username: "mohammed", name: "محمد علي - الكاشير", password: "1234", role: "cashier", permissions: ['invoice'] },
-            { username: "ali", name: "علي حسين - الكاشير", password: "ali", role: "cashier", permissions: ['invoice'] }
+            { username: "admin", name: "أبو فهد - المدير العام", password: "admin", role: "manager", permissions: ['invoice', 'expenses', 'reports', 'monthly-reports', 'treasury', 'inventory', 'settings', 'debts'] },
+            { username: "mohammed", name: "محمد علي - الكاشير", password: "1234", role: "cashier", permissions: ['invoice', 'debts'] },
+            { username: "ali", name: "علي حسين - الكاشير", password: "ali", role: "cashier", permissions: ['invoice', 'debts'] }
         ];
 
         // Employees database for Salaries Report ledger
@@ -86,6 +87,7 @@ const AppState = {
         this.reconciliations = [];
         this.archives = [];
         this.newProductsReport = [];
+        this.debts = [];
         this.needsReconciliation = false;
         
         this.saveAll();
@@ -103,6 +105,7 @@ const AppState = {
             this.reconciliations = JSON.parse(localStorage.getItem('vape_reconciliations') || '[]');
             this.archives = JSON.parse(localStorage.getItem('vape_archives') || '[]');
             this.newProductsReport = JSON.parse(localStorage.getItem('vape_new_products') || '[]');
+            this.debts = JSON.parse(localStorage.getItem('vape_debts') || '[]');
             this.needsReconciliation = localStorage.getItem('vape_needs_reconciliation') === 'true';
             
             const savedSettings = localStorage.getItem('vape_settings');
@@ -134,6 +137,7 @@ const AppState = {
         localStorage.setItem('vape_reconciliations', JSON.stringify(this.reconciliations));
         localStorage.setItem('vape_archives', JSON.stringify(this.archives));
         localStorage.setItem('vape_new_products', JSON.stringify(this.newProductsReport || []));
+        localStorage.setItem('vape_debts', JSON.stringify(this.debts || []));
         localStorage.setItem('vape_settings', JSON.stringify(this.settings));
         localStorage.setItem('vape_needs_reconciliation', this.needsReconciliation ? 'true' : 'false');
     }
@@ -284,7 +288,9 @@ const SyncManager = {
                 cloudReconciliations, 
                 cloudArchives,
                 cloudUsers,
-                cloudSettings
+                cloudSettings,
+                cloudDebts,
+                cloudDebtPayments
             ] = await Promise.all([
                 this.fetchFromFirebase("inventory", "inventory_master"),
                 this.fetchFromFirebase("employees_master", "employees_master"),
@@ -294,7 +300,9 @@ const SyncManager = {
                 this.fetchFromFirebase("treasury_reconciliations"),
                 this.fetchFromFirebase("daily_archives"),
                 this.fetchFromFirebase("system_users", "users_list"),
-                this.fetchFromFirebase("system_config", "settings_config")
+                this.fetchFromFirebase("system_config", "settings_config"),
+                this.fetchFromFirebase("customer_debts", "debts_list"),
+                this.fetchFromFirebase("debt_payments")
             ]);
             
             let hasCloudData = false;
@@ -335,11 +343,20 @@ const SyncManager = {
                 this.dispatchSync("settings", AppState.settings, "settings_config");
             }
             
+            // Merge or Seed Debts
+            if (cloudDebts && Array.isArray(cloudDebts)) {
+                AppState.debts = cloudDebts;
+                hasCloudData = true;
+            } else if (AppState.debts && AppState.debts.length > 0) {
+                this.dispatchSync("debts", AppState.debts, "debts_list");
+            }
+            
             // Transactions Merge
             let allCloudTransactions = [];
             if (cloudSales && Array.isArray(cloudSales)) { allCloudTransactions.push(...cloudSales); hasCloudData = true; }
             if (cloudExpenses && Array.isArray(cloudExpenses)) { allCloudTransactions.push(...cloudExpenses); hasCloudData = true; }
             if (cloudSalaries && Array.isArray(cloudSalaries)) { allCloudTransactions.push(...cloudSalaries); hasCloudData = true; }
+            if (cloudDebtPayments && Array.isArray(cloudDebtPayments)) { allCloudTransactions.push(...cloudDebtPayments); hasCloudData = true; }
             
             if (allCloudTransactions.length > 0) {
                 allCloudTransactions.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
@@ -350,6 +367,7 @@ const SyncManager = {
                     if (t.type === 'sale') this.dispatchSync("sales", t, t.id);
                     if (t.type === 'expense') this.dispatchSync("expenses", t, t.id);
                     if (t.type === 'salary') this.dispatchSync("salaries", t, t.id);
+                    if (t.type === 'debt_payment') this.dispatchSync("debt_payments", t, t.id);
                 });
             }
 
@@ -398,6 +416,8 @@ const SyncManager = {
             case "employees": firebaseCollection = "employees_master"; break;
             case "users": firebaseCollection = "system_users"; break;
             case "settings": firebaseCollection = "system_config"; break;
+            case "debts": firebaseCollection = "customer_debts"; break;
+            case "debt_payments": firebaseCollection = "debt_payments"; break;
             case "sales_delete": firebaseCollection = "sales_invoices"; isDelete = true; break;
             case "expenses_delete": firebaseCollection = "expenses"; isDelete = true; break;
             case "salaries_delete": firebaseCollection = "salary_transactions"; isDelete = true; break;
@@ -457,6 +477,16 @@ function handleScannedBarcode(barcode) {
             addToBasket(product.id);
             triggerBarcodeFlash();
             playBeep('success');
+            
+            // Clear search input and hide results
+            const searchInput = document.getElementById('invoice-search-input');
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            const resultsBox = document.getElementById('invoice-search-results');
+            if (resultsBox) {
+                resultsBox.style.display = 'none';
+            }
         } else {
             playBeep('error');
             alert(`الباركود الممسوح [${barcode}] غير مرتبط بأي منتج في المخزن!`);
@@ -478,7 +508,13 @@ function handleScannedBarcode(barcode) {
 }
 
 function checkAndFillProductByBarcode(barcode) {
-    if (!barcode) return;
+    if (!barcode) {
+        toggleProductQtyFields(false);
+        document.getElementById('modal-prod-title').innerText = "إضافة عنصر جديد للمستودع";
+        document.getElementById('prod-id').value = "";
+        return;
+    }
+    
     const existing = AppState.products.find(p => p.barcode === barcode);
     if (existing) {
         document.getElementById('prod-id').value = existing.id;
@@ -488,7 +524,22 @@ function checkAndFillProductByBarcode(barcode) {
         document.getElementById('prod-qty').value = existing.qty;
         document.getElementById('prod-source').value = existing.source || "";
         document.getElementById('modal-prod-title').innerText = "تعديل بيانات المنتج (موجود مسبقاً)";
+        
+        toggleProductQtyFields(true, existing);
         playBeep('success');
+    } else {
+        const currentId = document.getElementById('prod-id').value;
+        if (currentId) {
+            document.getElementById('prod-id').value = "";
+            document.getElementById('prod-name').value = "";
+            document.getElementById('prod-cost-usd').value = "";
+            document.getElementById('prod-cost').value = "";
+            document.getElementById('prod-price').value = "";
+            document.getElementById('prod-qty').value = "";
+            document.getElementById('prod-source').value = "";
+            document.getElementById('modal-prod-title').innerText = "إضافة عنصر جديد للمستودع";
+            toggleProductQtyFields(false);
+        }
     }
 }
 
@@ -551,6 +602,10 @@ function switchTab(tabId) {
                 titleHtml = '<span><i class="fa-solid fa-vault"></i> جرد ومطابقة الخزينة</span>';
                 descText = 'مطابقة رصيد النظام مع النقدية الفعلية بالدرج';
                 break;
+            case 'debts':
+                titleHtml = '<span><i class="fa-solid fa-hand-holding-hand"></i> قائمة الديون والذمم</span>';
+                descText = 'متابعة حسابات الديون وتسديد الدفعات للعملاء';
+                break;
             case 'inventory':
                 titleHtml = '<span><i class="fa-solid fa-boxes-stacked"></i> المستودع والمخزن</span>';
                 descText = 'إدارة المنتجات، الأسعار، والمخزون';
@@ -586,6 +641,12 @@ function switchTab(tabId) {
         renderExpenseTable();
     } else if (tabId === 'settings') {
         loadSettingsUI();
+    } else if (tabId === 'debts') {
+        renderDebtsList();
+        const detailPanel = document.getElementById('debtor-detail-panel');
+        if (detailPanel) detailPanel.style.display = 'none';
+        const placeholder = document.getElementById('debtor-empty-placeholder');
+        if (placeholder) placeholder.style.display = 'flex';
     }
     
     // Hide mobile menu if open
@@ -701,6 +762,17 @@ function adjustBasketQty(index, change) {
     }
     
     item.quantity = newQty;
+    
+    // Clamp discount if user is cashier
+    if (AppState.currentUser && AppState.currentUser.role === 'cashier') {
+        const unitPrice = item.product.price;
+        const maxUnitDiscount = getMaxAllowedDiscount(unitPrice);
+        const maxLineDiscount = maxUnitDiscount * item.quantity;
+        if (item.discount > maxLineDiscount) {
+            item.discount = maxLineDiscount;
+        }
+    }
+    
     renderBasket();
 }
 
@@ -713,9 +785,21 @@ function updateBasketItemDiscount(index, val) {
     let discount = parseInt(val) || 0;
     if (discount < 0) discount = 0;
     
-    // Check if discount is more than item total price
     const item = AppState.basket[index];
     const itemTotal = item.product.price * item.quantity;
+    
+    // Check cashier discount ceiling
+    if (AppState.currentUser && AppState.currentUser.role === 'cashier') {
+        const unitPrice = item.product.price;
+        const maxUnitDiscount = getMaxAllowedDiscount(unitPrice);
+        const maxLineDiscount = maxUnitDiscount * item.quantity;
+        
+        if (discount > maxLineDiscount) {
+            alert(`خطأ: تجاوز الحد المسموح لخصم الكاشير على هذا الصنف!\nالحد الأقصى للقطعة الواحدة: ${maxUnitDiscount.toLocaleString()} د.ع.\nإجمالي الحد الأقصى للكمية (${item.quantity}): ${maxLineDiscount.toLocaleString()} د.ع.`);
+            discount = maxLineDiscount;
+        }
+    }
+    
     if (discount > itemTotal) {
         alert("الخصم لا يمكن أن يكون أعلى من إجمالي سعر المادة!");
         discount = itemTotal;
@@ -852,6 +936,39 @@ function processCheckout() {
             location: document.getElementById('delivery-location').value.trim()
         };
     }
+    
+    // Capture Credit Details
+    const isCredit = document.getElementById('is-credit-sale').checked;
+    let customerName = "";
+    if (isCredit) {
+        customerName = document.getElementById('credit-customer-name').value.trim();
+        if (!customerName) {
+            alert("يرجى كتابة اسم الشخص المطلوب بالدين!");
+            return;
+        }
+        
+        // Find or create debtor
+        if (!AppState.debts) AppState.debts = [];
+        let debtor = AppState.debts.find(d => d.customerName.toLowerCase() === customerName.toLowerCase());
+        if (!debtor) {
+            debtor = {
+                id: "debt_" + Date.now(),
+                customerName: customerName,
+                amount: 0,
+                history: []
+            };
+            AppState.debts.push(debtor);
+        }
+        
+        debtor.amount += finalTotal;
+        debtor.history.push({
+            id: invoiceId,
+            type: 'charge',
+            amount: finalTotal,
+            timestamp: new Date().toISOString(),
+            description: `شراء بالدين - فاتورة رقم ${invoiceId}`
+        });
+    }
 
     // 2. Create invoice transaction
     const transaction = {
@@ -859,6 +976,8 @@ function processCheckout() {
         type: 'sale', // sale / expense / salary
         isDelivery: isDelivery,
         deliveryDetails: deliveryDetails,
+        paymentType: isCredit ? 'credit' : 'cash',
+        customerName: isCredit ? customerName : null,
         items: AppState.basket.map(item => ({
             id: item.product.id,
             name: item.product.name,
@@ -881,6 +1000,9 @@ function processCheckout() {
     
     // 3. Dispatch Sync to sheets/firebase
     SyncManager.dispatchSync("sales", transaction, transaction.id);
+    if (isCredit && AppState.debts) {
+        SyncManager.dispatchSync("debts", AppState.debts, "debts_list");
+    }
     
     // Update local products data to Google Sheets too
     SyncManager.syncToSheets("products", AppState.products);
@@ -895,6 +1017,10 @@ function processCheckout() {
     // Clear delivery fields
     document.getElementById('is-delivery-sale').checked = false;
     toggleDeliveryFields();
+    
+    // Clear credit fields
+    document.getElementById('is-credit-sale').checked = false;
+    toggleCreditFields();
     
     renderBasket();
     
@@ -1171,7 +1297,10 @@ function renderEmployeeLedgerCards() {
     AppState.employees.forEach(emp => {
         // Calculate totals for advances/withdrawals
         let totalWithdrawals = 0;
-        emp.withdrawals.forEach(w => totalWithdrawals += w.amount);
+        emp.withdrawals.forEach(w => {
+            const incoming = w.direction === 'in' || w.amount < 0;
+            totalWithdrawals += (incoming ? -Math.abs(w.amount) : Math.abs(w.amount));
+        });
         
         const remaining = Math.max(0, emp.salary - totalWithdrawals);
         
@@ -1204,25 +1333,34 @@ function addSalaryWithdrawal(e) {
     if (e) e.preventDefault();
     
     const empId = document.getElementById('salary-employee').value;
-    const amount = parseInt(document.getElementById('salary-amount').value) || 0;
+    const amountOut = parseInt(document.getElementById('salary-amount-out').value) || 0;
+    const amountIn = parseInt(document.getElementById('salary-amount-in').value) || 0;
     const notes = document.getElementById('salary-desc').value.trim();
     
-    if (!empId || amount <= 0) {
-        alert("يرجى اختيار الموظف وإدخال مبلغ السلفة الصحيح!");
+    if (!empId || (amountOut <= 0 && amountIn <= 0)) {
+        alert("يرجى اختيار الموظف وإدخال مبلغ صادر أو وارد صحيح!");
         return;
     }
     
     const emp = AppState.employees.find(e => e.id === empId);
     if (!emp) return;
     
-    // Check remaining limit
-    let totalWithdrawals = 0;
-    emp.withdrawals.forEach(w => totalWithdrawals += w.amount);
-    const maxWithdrawable = emp.salary - totalWithdrawals;
+    const isIncoming = amountIn > 0;
+    const amount = isIncoming ? amountIn : amountOut;
     
-    if (amount > maxWithdrawable) {
-        if (!confirm(`تحذير: مبلغ السلفة (${amount.toLocaleString()} د.ع) يتجاوز الرصيد المتبقي للموظف (${maxWithdrawable.toLocaleString()} د.ع). هل تريد الاستمرار وتسجيل السحب كعجز مدين؟`)) {
-            return;
+    // Check remaining limit if outgoing
+    if (!isIncoming) {
+        let totalWithdrawals = 0;
+        emp.withdrawals.forEach(w => {
+            const incoming = w.direction === 'in' || w.amount < 0;
+            totalWithdrawals += (incoming ? -Math.abs(w.amount) : Math.abs(w.amount));
+        });
+        const maxWithdrawable = emp.salary - totalWithdrawals;
+        
+        if (amount > maxWithdrawable) {
+            if (!confirm(`تحذير: مبلغ السلفة (${amount.toLocaleString()} د.ع) يتجاوز الرصيد المتبقي للموظف (${maxWithdrawable.toLocaleString()} د.ع). هل تريد الاستمرار وتسجيل السحب كعجز مدين؟`)) {
+                return;
+            }
         }
     }
     
@@ -1230,10 +1368,11 @@ function addSalaryWithdrawal(e) {
     const newTx = {
         id: withdrawalId,
         type: 'salary',
+        direction: isIncoming ? 'in' : 'out',
         employeeId: emp.id,
         employeeName: emp.name,
         amount: amount,
-        description: notes || "سحب دوري من الراتب",
+        description: notes || (isIncoming ? "إرجاع مبلغ سلفة / سداد" : "سحب دوري من الراتب"),
         timestamp: new Date().toISOString(),
         createdBy: AppState.currentUser ? AppState.currentUser.name : "المدير"
     };
@@ -1242,7 +1381,8 @@ function addSalaryWithdrawal(e) {
     emp.withdrawals.push({
         id: withdrawalId,
         amount: amount,
-        description: notes || "سحب دوري من الراتب",
+        direction: isIncoming ? 'in' : 'out',
+        description: notes || (isIncoming ? "إرجاع مبلغ سلفة / سداد" : "سحب دوري من الراتب"),
         timestamp: new Date().toISOString()
     });
     
@@ -1252,10 +1392,11 @@ function addSalaryWithdrawal(e) {
     
     // Sync to Cloud
     SyncManager.dispatchSync("salaries", newTx, newTx.id);
-    SyncManager.syncToSheets("salaries_employees_master", AppState.employees); // Keep master file updated
+    SyncManager.syncToSheets("salaries_employees_master", AppState.employees);
     
     // Clear forms & update UI
-    document.getElementById('salary-amount').value = '';
+    document.getElementById('salary-amount-out').value = '';
+    document.getElementById('salary-amount-in').value = '';
     document.getElementById('salary-desc').value = '';
     
     playBeep('success');
@@ -1268,7 +1409,7 @@ function addSalaryWithdrawal(e) {
         viewEmployeeLedgerDetails(emp.id);
     }
     
-    alert(`تم تسجيل سحبة الموظف ${emp.name} بنجاح بقيمة ${amount.toLocaleString()} د.ع.`);
+    alert(`تم تسجيل الحركة للموظف ${emp.name} بنجاح بقيمة ${amount.toLocaleString()} د.ع.`);
 }
 
 function viewEmployeeLedgerDetails(empId) {
@@ -1288,13 +1429,20 @@ function viewEmployeeLedgerDetails(empId) {
     
     let totalWithdrawn = 0;
     emp.withdrawals.forEach(w => {
-        totalWithdrawn += w.amount;
+        const isIncoming = w.direction === 'in' || w.amount < 0;
+        const absAmt = Math.abs(w.amount);
+        const signedAmt = isIncoming ? -absAmt : absAmt;
+        totalWithdrawn += signedAmt;
+        
         const dt = new Date(w.timestamp).toLocaleString('ar-IQ');
+        const color = isIncoming ? 'var(--primary)' : 'var(--danger)';
+        const prefix = isIncoming ? 'وارد (إرجاع) +' : 'صادر (سحب) -';
+        
         tableBody.innerHTML += `
             <tr>
                 <td style="font-family:'Inter'; font-size:12px;">${w.id}</td>
                 <td>${dt}</td>
-                <td class="price-value" style="color:var(--danger);">${w.amount.toLocaleString()} د.ع</td>
+                <td class="price-value" style="color:${color}; font-weight:700;">${prefix}${absAmt.toLocaleString()} د.ع</td>
                 <td>${w.description}</td>
             </tr>
         `;
@@ -1341,7 +1489,10 @@ function payEmployeeSalary() {
     
     // Calculate remaining
     let totalWithdrawn = 0;
-    emp.withdrawals.forEach(w => totalWithdrawn += w.amount);
+    emp.withdrawals.forEach(w => {
+        const incoming = w.direction === 'in' || w.amount < 0;
+        totalWithdrawn += (incoming ? -Math.abs(w.amount) : Math.abs(w.amount));
+    });
     const remaining = Math.max(0, emp.salary - totalWithdrawn);
     
     // Add transaction to daily report if there is remaining salary to pay
@@ -1382,7 +1533,8 @@ function calculateTreasuryReconciliation() {
     // Starting cash + sales - expenses - salaries
     const startingCash = AppState.settings.startingCash || 0;
     
-    let totalSales = 0;
+    let totalCashSales = 0;
+    let totalDebtRepayments = 0;
     let totalExpenses = 0;
     
     const today = new Date();
@@ -1393,14 +1545,20 @@ function calculateTreasuryReconciliation() {
         const tStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         if (tStr === todayStr) {
             if (t.type === 'sale') {
-                totalSales += t.total;
+                if (t.paymentType !== 'credit') {
+                    totalCashSales += t.total;
+                }
+            } else if (t.type === 'debt_payment') {
+                totalDebtRepayments += t.amount;
+            } else if (t.type === 'salary' && t.direction === 'in') {
+                totalCashSales += t.amount;
             } else if (t.type === 'expense' || t.type === 'salary') {
                 totalExpenses += t.amount;
             }
         }
     });
     
-    const systemBalance = startingCash + totalSales - totalExpenses;
+    const systemBalance = startingCash + totalCashSales + totalDebtRepayments - totalExpenses;
     
     const sysBalanceVal = document.getElementById('treasury-system-balance');
     if (sysBalanceVal) {
@@ -1659,8 +1817,6 @@ function commitTreasuryReconciliation(e) {
 function renderReportsDashboard() {
     // 1. Calculate figures
     const startingCash = AppState.settings.startingCash || 0;
-    let totalSales = 0;
-    let totalExpenses = 0;
     
     // Filter active today's transactions
     const today = new Date();
@@ -1672,13 +1828,28 @@ function renderReportsDashboard() {
         return tStr === todayStr;
     });
 
+    let totalSales = 0;
+    let totalCashSales = 0;
+    let totalDebtRepayments = 0;
+    let totalExpenses = 0;
+    
     todaysTransactions.forEach(t => {
-        if (t.type === 'sale') totalSales += t.total;
-        else if (t.type === 'expense' || t.type === 'salary') totalExpenses += t.amount;
+        if (t.type === 'sale') {
+            totalSales += t.total;
+            if (t.paymentType !== 'credit') {
+                totalCashSales += t.total;
+            }
+        } else if (t.type === 'debt_payment') {
+            totalDebtRepayments += t.amount;
+        } else if (t.type === 'salary' && t.direction === 'in') {
+            totalCashSales += t.amount;
+        } else if (t.type === 'expense' || t.type === 'salary') {
+            totalExpenses += t.amount;
+        }
     });
     
     const netProfit = totalSales - totalExpenses;
-    const systemExpected = startingCash + totalSales - totalExpenses;
+    const systemExpected = startingCash + totalCashSales + totalDebtRepayments - totalExpenses;
     
     // Update labels
     const todayOpeningLabel = document.getElementById('report-today-opening');
@@ -1688,7 +1859,15 @@ function renderReportsDashboard() {
     const todayExpectedLabel = document.getElementById('report-today-expected');
     
     if (todayOpeningLabel) todayOpeningLabel.innerText = `${startingCash.toLocaleString()} د.ع`;
-    if (todaySalesLabel) todaySalesLabel.innerText = `${totalSales.toLocaleString()} د.ع`;
+    if (todaySalesLabel) {
+        // Display total sales, and if there are credit sales, show details
+        const creditSalesAmt = totalSales - totalCashSales;
+        if (creditSalesAmt > 0) {
+            todaySalesLabel.innerHTML = `<span style="font-size:16px;">${totalSales.toLocaleString()} د.ع</span><br><small style="font-size:10px; font-weight:normal; color:var(--text-muted);">نقدي: ${totalCashSales.toLocaleString()} | آجل: ${creditSalesAmt.toLocaleString()}</small>`;
+        } else {
+            todaySalesLabel.innerText = `${totalSales.toLocaleString()} د.ع`;
+        }
+    }
     if (todayExpensesLabel) todayExpensesLabel.innerText = `${totalExpenses.toLocaleString()} د.ع`;
     if (todayNetLabel) {
         todayNetLabel.innerText = `${netProfit.toLocaleString()} د.ع`;
@@ -1722,6 +1901,10 @@ function renderReportsDashboard() {
                         typeText += `<br><div style="margin-top:5px; padding:4px 8px; background:rgba(220, 38, 38, 0.1); border-right:3px solid var(--danger); color:var(--danger); font-size:11px; border-radius:4px;"><i class="fa-solid fa-tags"></i> تم خصم إضافي بقيمة <strong>${tx.discount.toLocaleString()} د.ع</strong> من إجمالي الفاتورة</div>`;
                     }
                     
+                    if (tx.paymentType === 'credit') {
+                        typeText += `<br><small style="color: var(--accent);"><i class="fa-solid fa-hand-holding-hand"></i> مبيعات بالدين للعميل: <strong>${tx.customerName}</strong></small>`;
+                    }
+                    
                     if (tx.isDelivery) {
                         typeText += `<br><small style="color: var(--accent);"><i class="fa-solid fa-truck"></i> توصيل: ${tx.deliveryDetails.name} - هاتف: ${tx.deliveryDetails.phone} (${tx.deliveryDetails.location})</small>`;
                         typeText += `<br><button class="btn btn-secondary btn-sm" style="margin-top:5px; padding: 2px 5px; font-size:10px;" onclick="printThermalDelivery('${tx.id}')"><i class="fa-solid fa-print"></i> طباعة الوصل</button>`;
@@ -1731,9 +1914,14 @@ function renderReportsDashboard() {
                     priceColor = 'var(--danger)';
                     prefix = '-';
                 } else if (tx.type === 'salary') {
-                    typeText = `رواتب: سحبة لـ ${tx.employeeName}`;
-                    priceColor = 'var(--danger)';
-                    prefix = '-';
+                    const dirText = tx.direction === 'in' ? ' (وارد)' : ' (صادر)';
+                    typeText = `رواتب: سحبة لـ ${tx.employeeName}${dirText}`;
+                    priceColor = tx.direction === 'in' ? 'var(--primary)' : 'var(--danger)';
+                    prefix = tx.direction === 'in' ? '+' : '-';
+                } else if (tx.type === 'debt_payment') {
+                    typeText = tx.description;
+                    priceColor = 'var(--primary)';
+                    prefix = '+';
                 }
                 
                 const amt = tx.type === 'sale' ? tx.total : tx.amount;
@@ -1837,6 +2025,7 @@ function openArchiveDetails(dateStr) {
     const tbody = document.getElementById('archive-transactions-body');
     if (!modal || !tbody) return;
     
+    modal.dataset.dateStr = dateStr;
     document.getElementById('archive-modal-title').innerText = `تفاصيل أرشيف يوم: ${dateStr}`;
 
     // Filter transactions for the selected date
@@ -2252,8 +2441,8 @@ function printThermalDelivery(txId) {
 }
 
 // Print daily report from archives specifically
-function printArchivedReport(archiveId) {
-    const arc = AppState.archives.find(a => a.archiveId === archiveId);
+function printArchivedReport(archiveId, tempArc = null) {
+    const arc = tempArc || AppState.archives.find(a => a.archiveId === archiveId);
     if (!arc) {
         alert("خطأ: لم يتم العثور على قيد الأرشيف المطلوب!");
         return;
@@ -2265,11 +2454,20 @@ function printArchivedReport(archiveId) {
     // Add A4 layout styling class
     printContainer.classList.add('a4-report');
     
-    // Get sales and expenses from the archive snapshot
-    const transactions = arc.transactions || [];
+    // Get sales and expenses from the archive snapshot, with fallback to current state
+    let transactions = arc.transactions || [];
+    if (transactions.length === 0 && arc.dateStr) {
+        transactions = AppState.transactions.filter(t => {
+            const d = new Date(t.timestamp || Date.now());
+            const tStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            return tStr === arc.dateStr;
+        });
+    }
+    
     const sales = transactions.filter(t => t.type === 'sale');
     const expenses = transactions.filter(t => t.type === 'expense');
     const salaries = transactions.filter(t => t.type === 'salary');
+    const debtPayments = transactions.filter(t => t.type === 'debt_payment');
     
     // Reconstruct starting cash with fallback
     const startingCash = arc.startingCash !== undefined ? arc.startingCash : (arc.systemBalance !== undefined ? Math.max(0, arc.systemBalance - arc.totalSales + arc.totalExpenses) : 0);
@@ -2277,17 +2475,19 @@ function printArchivedReport(archiveId) {
     let totalSalesAmt = arc.totalSales || 0;
     let totalExpensesAmt = 0;
     let totalSalariesAmt = 0;
+    let totalDebtPaymentsAmt = 0;
     
     if (transactions.length > 0) {
         expenses.forEach(e => totalExpensesAmt += e.amount);
         salaries.forEach(s => totalSalariesAmt += s.amount);
+        debtPayments.forEach(d => totalDebtPaymentsAmt += d.amount);
     } else {
         totalExpensesAmt = arc.totalExpenses || 0;
     }
     
     const totalOut = totalExpensesAmt + totalSalariesAmt;
     const netProfit = totalSalesAmt - totalOut;
-    const systemExpected = startingCash + totalSalesAmt - totalOut;
+    const systemExpected = startingCash + totalSalesAmt - totalOut + totalDebtPaymentsAmt;
     
     // Build Unified Ledger Rows
     let unifiedRows = '';
@@ -2315,6 +2515,10 @@ function printArchivedReport(archiveId) {
                 typeText = `رواتب: سحبة لـ ${tx.employeeName}`;
                 priceColor = '#d32f2f';
                 prefix = '-';
+            } else if (tx.type === 'debt_payment') {
+                typeText = tx.description || `تسديد دين: ${tx.customerName}`;
+                priceColor = '#2e7d32';
+                prefix = '+';
             }
             
             const amt = tx.type === 'sale' ? tx.total : tx.amount;
@@ -2334,11 +2538,17 @@ function printArchivedReport(archiveId) {
     const printTime = arc.timestamp ? new Date(arc.timestamp).toLocaleTimeString('ar-IQ') : '--:--';
     const closedBy = arc.closedBy || 'المدير';
     
+    // Safely format optional properties
+    const formattedPhysical = arc.physicalCash !== undefined ? arc.physicalCash.toLocaleString() + ' د.ع' : 'غير محدد';
+    const formattedDifference = arc.difference !== undefined ? arc.difference.toLocaleString() + ' د.ع' : 'غير محدد';
+    const diffColor = arc.difference === 0 ? 'green' : (arc.difference > 0 ? 'orange' : 'red');
+    const formattedDate = arc.date || arc.dateStr || '--';
+    
     printContainer.innerHTML = `
         <div class="print-header" style="border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px;">
             <h1>تقرير المبيعات والوردية اليومي (مؤرشف)</h1>
             <p style="font-size: 13px; font-weight: 700;">محل يلا فيب للأراكيل والفيب</p>
-            <p style="font-size: 11px;">تاريخ الوردية: ${arc.date} | وقت الإغلاق: ${printTime}</p>
+            <p style="font-size: 11px;">تاريخ الوردية: ${formattedDate} | وقت الإغلاق: ${printTime}</p>
         </div>
         
         <div class="print-info" style="font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between;">
@@ -2387,9 +2597,13 @@ function printArchivedReport(archiveId) {
                 <span>إجمالي سلف الموظفين (الصادر):</span>
                 <strong>-${totalSalariesAmt.toLocaleString()} د.ع</strong>
             </div>
+            <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
+                <span>إجمالي تسديد الديون (الوارد):</span>
+                <strong>+${totalDebtPaymentsAmt.toLocaleString()} د.ع</strong>
+            </div>
             <div class="print-totals-row bold" style="font-size: 13px; border-top: 1px dashed #ccc; padding-top: 8px; margin-bottom: 6px;">
                 <span>صافي الدخل للوردية:</span>
-                <strong style="color:${netProfit >= 0 ? 'green' : 'red'};">${netProfit.toLocaleString()} د.ع</strong>
+                <strong style="color:${netProfit >= 0 ? 'green' : 'red'};">${(netProfit + totalDebtPaymentsAmt).toLocaleString()} د.ع</strong>
             </div>
             <div class="print-totals-row bold" style="font-size: 13px; border-top: 1px solid #ccc; padding-top: 5px; margin-bottom: 6px;">
                 <span>الرصيد الدفتري المتوقع بالصندوق:</span>
@@ -2397,11 +2611,11 @@ function printArchivedReport(archiveId) {
             </div>
             <div class="print-totals-row bold" style="font-size: 13px; margin-bottom: 6px;">
                 <span>المبلغ الفعلي المقيد بالخزينة:</span>
-                <strong>${arc.physicalCash.toLocaleString()} د.ع</strong>
+                <strong>${formattedPhysical}</strong>
             </div>
             <div class="print-totals-row bold" style="font-size: 15px; border-top: 1px solid #000; padding-top: 8px;">
                 <span>الفارق أو العجز في الصندوق:</span>
-                <strong style="color:${arc.difference === 0 ? 'green' : (arc.difference > 0 ? 'orange' : 'red')};">${arc.difference.toLocaleString()} د.ع</strong>
+                <strong style="color:${diffColor};">${formattedDifference}</strong>
             </div>
         </div>
         
@@ -2413,11 +2627,10 @@ function printArchivedReport(archiveId) {
     
     // Change page title dynamically to set file name for Save as PDF
     const originalTitle = document.title;
-    const safeDateStr = arc.date.replace(/[\/\\]/g, '-').replace(/\s+/g, '_');
+    const safeDateStr = (arc.date || arc.dateStr || '').replace(/[\/\\]/g, '-').replace(/\s+/g, '_');
     document.title = `تقرير_اليومية_بتاريخ_${safeDateStr}`;
     
     // Execute print - must make element visible before calling window.print()
-    // Some browsers don't correctly handle display:none -> display:block via @media print alone
     printContainer.style.display = 'block';
     printContainer.style.position = 'fixed';
     printContainer.style.top = '0';
@@ -2446,6 +2659,49 @@ function printArchivedReport(archiveId) {
     setTimeout(() => {
         window.print();
     }, 150);
+}
+
+function printArchivedReportFromModal() {
+    const modal = document.getElementById('archive-details-modal');
+    if (!modal) return;
+    const dateStr = modal.dataset.dateStr;
+    if (!dateStr) {
+        alert("خطأ: لم يتم تحديد تاريخ الأرشيف!");
+        return;
+    }
+    
+    let arc = AppState.archives.find(a => a.dateStr === dateStr);
+    if (!arc) {
+        // Prepare temporary archive object
+        const dayTransactions = AppState.transactions.filter(t => {
+            const d = new Date(t.timestamp || Date.now());
+            const tStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            return tStr === dateStr;
+        });
+        
+        let totalSales = 0;
+        let totalExpenses = 0;
+        dayTransactions.forEach(t => {
+            if (t.type === 'sale') totalSales += t.total;
+            else if (t.type === 'expense' || t.type === 'salary') totalExpenses += t.amount;
+        });
+        
+        arc = {
+            archiveId: 'TEMP-' + dateStr,
+            dateStr: dateStr,
+            date: dateStr,
+            totalSales: totalSales,
+            totalExpenses: totalExpenses,
+            netProfit: totalSales - totalExpenses,
+            physicalCash: totalSales - totalExpenses + (AppState.settings.startingCash || 0),
+            difference: 0,
+            startingCash: AppState.settings.startingCash || 0,
+            timestamp: new Date().toISOString(),
+            transactions: dayTransactions
+        };
+    }
+    
+    printArchivedReport(arc.archiveId, arc);
 }
 
 // --- MONTHLY AGGREGATED REPORT CALCS & RENDER ---
@@ -2815,6 +3071,51 @@ function filterInventory() {
     renderInventoryTable();
 }
 
+function toggleProductQtyFields(isExisting, prod = null) {
+    const qtyInput = document.getElementById('prod-qty');
+    const newQtyGroup = document.getElementById('prod-new-qty-group');
+    const newQtyInput = document.getElementById('prod-new-qty');
+    const qtyLabel = document.getElementById('prod-qty-label');
+    const costUsdInput = document.getElementById('prod-cost-usd');
+    
+    if (isExisting) {
+        qtyInput.readOnly = true;
+        qtyInput.style.opacity = '0.7';
+        if (newQtyGroup) newQtyGroup.style.display = 'block';
+        if (newQtyInput) newQtyInput.value = 0;
+        if (qtyLabel) qtyLabel.innerText = "الكمية الحالية بالمستودع";
+        
+        if (prod) {
+            const usdRate = AppState.settings.usdExchangeRate || 1500;
+            if (prod.costUsd !== undefined && prod.costUsd > 0) {
+                costUsdInput.value = prod.costUsd;
+            } else {
+                costUsdInput.value = (prod.cost / usdRate).toFixed(2);
+            }
+        }
+    } else {
+        qtyInput.readOnly = false;
+        qtyInput.style.opacity = '1';
+        if (newQtyGroup) newQtyGroup.style.display = 'none';
+        if (newQtyInput) newQtyInput.value = 0;
+        if (qtyLabel) qtyLabel.innerText = "الكمية المدخلة للمستودع";
+        if (costUsdInput) costUsdInput.value = "";
+    }
+}
+
+function convertUsdToIqdCost() {
+    const usdCostInput = document.getElementById('prod-cost-usd');
+    const iqdCostInput = document.getElementById('prod-cost');
+    if (!usdCostInput || !iqdCostInput) return;
+    
+    const usdCost = parseFloat(usdCostInput.value) || 0;
+    const usdExchangeRate = AppState.settings.usdExchangeRate || 1500;
+    
+    if (usdCost > 0) {
+        iqdCostInput.value = Math.round(usdCost * usdExchangeRate);
+    }
+}
+
 function openProductAddModal() {
     if (AppState.currentUser && AppState.currentUser.role !== 'manager') {
         alert("غير مصرح لك بإضافة المنتجات.");
@@ -2824,10 +3125,16 @@ function openProductAddModal() {
     document.getElementById('prod-id').value = "";
     document.getElementById('prod-barcode').value = "";
     document.getElementById('prod-name').value = "";
+    document.getElementById('prod-cost-usd').value = "";
     document.getElementById('prod-cost').value = "";
     document.getElementById('prod-price').value = "";
     document.getElementById('prod-qty').value = "";
     document.getElementById('prod-source').value = "";
+    if (document.getElementById('prod-invoice')) {
+        document.getElementById('prod-invoice').value = "";
+    }
+    
+    toggleProductQtyFields(false);
     
     document.getElementById('product-modal').classList.add('active');
 }
@@ -2848,6 +3155,11 @@ function openProductEditModal(productId) {
     document.getElementById('prod-price').value = prod.price;
     document.getElementById('prod-qty').value = prod.qty;
     document.getElementById('prod-source').value = prod.source || "";
+    if (document.getElementById('prod-invoice')) {
+        document.getElementById('prod-invoice').value = "";
+    }
+    
+    toggleProductQtyFields(true, prod);
     
     document.getElementById('product-modal').classList.add('active');
 }
@@ -2865,6 +3177,8 @@ function handleSaveProduct(e) {
     const cost = parseInt(document.getElementById('prod-cost').value) || 0;
     const price = parseInt(document.getElementById('prod-price').value) || 0;
     const qty = parseInt(document.getElementById('prod-qty').value) || 0;
+    const newQty = parseInt(document.getElementById('prod-new-qty').value) || 0;
+    const costUsd = parseFloat(document.getElementById('prod-cost-usd').value) || 0;
     const source = document.getElementById('prod-source').value.trim() || "غير محدد";
     const invoiceEl = document.getElementById('prod-invoice');
     const invoice = invoiceEl ? invoiceEl.value.trim() : "غير محدد";
@@ -2874,23 +3188,19 @@ function handleSaveProduct(e) {
         return;
     }
     
-    // Check barcode duplicates if creating new
-    if (!id) {
-        const dup = AppState.products.find(p => p.barcode === barcode);
-        if (dup) {
-            alert(`خطأ: هذا الباركود [${barcode}] مستخدم بالفعل للمنتج: ${dup.name}`);
-            return;
-        }
-    }
+    let finalQty = qty;
+    let addedQty = 0;
     
     if (id) {
         // Edit Mode
         const prodIndex = AppState.products.findIndex(p => p.id === id);
         if (prodIndex > -1) {
             const oldQty = AppState.products[prodIndex].qty || 0;
-            AppState.products[prodIndex] = { id, barcode, name, cost, price, qty, source };
+            addedQty = newQty;
+            finalQty = oldQty + addedQty;
             
-            const addedQty = qty - oldQty;
+            AppState.products[prodIndex] = { id, barcode, name, cost, price, qty: finalQty, costUsd, source };
+            
             if (addedQty > 0) {
                 if (!AppState.newProductsReport) AppState.newProductsReport = [];
                 AppState.newProductsReport.push({
@@ -2904,21 +3214,49 @@ function handleSaveProduct(e) {
         }
     } else {
         // Add Mode
-        const newProduct = {
-            id: "p_" + Date.now(),
-            barcode, name, cost, price, qty, source
-        };
-        AppState.products.push(newProduct);
-        
-        // Add to new products report
-        if (!AppState.newProductsReport) AppState.newProductsReport = [];
-        AppState.newProductsReport.push({
-            date: new Date().toISOString(),
-            name: name,
-            qty: qty,
-            invoice: invoice,
-            source: source
-        });
+        const dup = AppState.products.find(p => p.barcode === barcode);
+        if (dup) {
+            alert(`تنبيه: هذا المنتج موجود مسبقاً باسم: ${dup.name}. سيتم دمج الكمية والتعديل.`);
+            addedQty = newQty > 0 ? newQty : qty;
+            finalQty = dup.qty + addedQty;
+            
+            dup.name = name;
+            dup.cost = cost;
+            dup.costUsd = costUsd;
+            dup.price = price;
+            dup.qty = finalQty;
+            dup.source = source;
+            
+            if (addedQty > 0) {
+                if (!AppState.newProductsReport) AppState.newProductsReport = [];
+                AppState.newProductsReport.push({
+                    date: new Date().toISOString(),
+                    name: name,
+                    qty: addedQty,
+                    invoice: invoice,
+                    source: source
+                });
+            }
+        } else {
+            finalQty = qty;
+            addedQty = qty;
+            const newProduct = {
+                id: "p_" + Date.now(),
+                barcode, name, cost, price, qty: finalQty, costUsd, source
+            };
+            AppState.products.push(newProduct);
+            
+            if (addedQty > 0) {
+                if (!AppState.newProductsReport) AppState.newProductsReport = [];
+                AppState.newProductsReport.push({
+                    date: new Date().toISOString(),
+                    name: name,
+                    qty: addedQty,
+                    invoice: invoice,
+                    source: source
+                });
+            }
+        }
     }
     
     AppState.saveAll();
@@ -3256,6 +3594,10 @@ function loadSettingsUI() {
     if (cashInput) {
         cashInput.value = AppState.settings.startingCash;
     }
+    const rateInput = document.getElementById('setting-usd-exchange-rate');
+    if (rateInput) {
+        rateInput.value = AppState.settings.usdExchangeRate || 1500;
+    }
     
     const fbApiKeyInput = document.getElementById('setting-fb-api-key');
     const fbProjIdInput = document.getElementById('setting-fb-proj-id');
@@ -3271,13 +3613,15 @@ function saveSystemConfigurations(e) {
     if (e) e.preventDefault();
     
     const startingCash = parseInt(document.getElementById('setting-starting-cash').value) || 0;
+    const usdExchangeRate = parseInt(document.getElementById('setting-usd-exchange-rate').value) || 1500;
     
     AppState.settings.startingCash = startingCash;
+    AppState.settings.usdExchangeRate = usdExchangeRate;
     AppState.saveAll();
     
     SyncManager.dispatchSync("settings", AppState.settings, "settings_config");
     
-    alert("تم حفظ الرصيد الافتتاحي للدرج بنجاح.");
+    alert("تم حفظ إعدادات الدرج وسعر صرف الدولار بنجاح.");
 }
 
 function saveCloudConfigurations(e) {
@@ -3609,6 +3953,138 @@ function toggleEditUserPermissions() {
     document.getElementById('edit-user-perms-group').style.display = role === 'manager' ? 'none' : 'block';
 }
 
+function getMaxAllowedDiscount(unitPrice) {
+    if (unitPrice >= 60000) return 15000;
+    if (unitPrice >= 35000) return 10000;
+    if (unitPrice >= 22000) return 5000;
+    if (unitPrice >= 10000) return 2000;
+    return 0;
+}
+
+function setupRoleBasedUI(user) {
+    if (!user) return;
+    
+    document.getElementById('sidebar-user-fullname').innerText = user.name;
+    document.getElementById('sidebar-user-role').innerText = user.role === 'manager' ? 'مدير النظام' : 'كاشير / موظف';
+    
+    const generalDiscountInput = document.getElementById('invoice-discount');
+    if (generalDiscountInput) {
+        if (user.role === 'cashier') {
+            generalDiscountInput.disabled = true;
+            generalDiscountInput.value = 0;
+            generalDiscountInput.placeholder = "الخصم العام معطل للكاشير";
+        } else {
+            generalDiscountInput.disabled = false;
+            generalDiscountInput.placeholder = "0";
+        }
+    }
+    
+    if (user.role === 'cashier') {
+        const perms = user.permissions || ['invoice'];
+        document.querySelectorAll('.nav-item').forEach(item => {
+            const tab = item.dataset.tab;
+            if (!perms.includes(tab)) {
+                item.style.display = 'none';
+            } else {
+                item.style.display = 'block';
+            }
+        });
+        
+        if (perms.includes('invoice')) {
+            switchTab('invoice');
+        } else if (perms.length > 0) {
+            switchTab(perms[0]);
+        } else {
+            document.querySelectorAll('.workspace-panel').forEach(p => p.classList.remove('active'));
+        }
+    } else {
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.style.display = 'block';
+        });
+        switchTab('invoice');
+    }
+}
+
+function renderLoginUsers() {
+    const grid = document.getElementById('login-users-grid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    AppState.users.forEach(user => {
+        const isManager = user.role === 'manager';
+        const icon = isManager ? 'fa-user-shield' : 'fa-cash-register';
+        const color = isManager ? 'var(--accent)' : 'var(--primary)';
+        
+        grid.innerHTML += `
+            <div class="user-login-card" onclick="selectLoginUser('${user.username}', '${user.name}')">
+                <div class="avatar" style="background: rgba(255, 255, 255, 0.05); color: ${color}; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 20px; border: 1px solid var(--border-color); transition: all 0.2s;">
+                    <i class="fa-solid ${icon}"></i>
+                </div>
+                <div style="font-weight: bold; font-size: 13px; color: var(--text-main); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${user.name.split(' - ')[0]}</div>
+                <div style="font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 3px;">${isManager ? 'مدير' : 'كاشير'}</div>
+            </div>
+        `;
+    });
+}
+
+function selectLoginUser(username, name) {
+    const grid = document.getElementById('login-users-grid');
+    const toggleBtn = document.getElementById('manual-login-toggle');
+    const unameInput = document.getElementById('login-uname');
+    const unameGroup = document.getElementById('login-uname-group');
+    const passGroup = document.getElementById('login-pass-group');
+    const passLabel = document.getElementById('login-pass-label');
+    const passInput = document.getElementById('login-pass');
+    
+    unameInput.value = username;
+    if (unameGroup) unameGroup.style.display = 'none';
+    if (grid) grid.style.display = 'none';
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    
+    if (passGroup) passGroup.style.display = 'block';
+    if (passLabel) passLabel.innerText = `رمز المرور لحساب: ${name}`;
+    if (passInput) {
+        passInput.value = '';
+        passInput.focus();
+    }
+}
+
+function resetLoginScreen() {
+    const grid = document.getElementById('login-users-grid');
+    const toggleBtn = document.getElementById('manual-login-toggle');
+    const unameGroup = document.getElementById('login-uname-group');
+    const passGroup = document.getElementById('login-pass-group');
+    const passInput = document.getElementById('login-pass');
+    
+    if (grid) grid.style.display = 'grid';
+    if (toggleBtn) toggleBtn.style.display = 'block';
+    if (unameGroup) unameGroup.style.display = 'none';
+    if (passGroup) passGroup.style.display = 'none';
+    if (passInput) passInput.value = '';
+    
+    renderLoginUsers();
+}
+
+function showManualLogin() {
+    const grid = document.getElementById('login-users-grid');
+    const toggleBtn = document.getElementById('manual-login-toggle');
+    const unameInput = document.getElementById('login-uname');
+    const unameGroup = document.getElementById('login-uname-group');
+    const passGroup = document.getElementById('login-pass-group');
+    const passLabel = document.getElementById('login-pass-label');
+    const passInput = document.getElementById('login-pass');
+    
+    unameInput.value = '';
+    if (grid) grid.style.display = 'none';
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    
+    if (unameGroup) unameGroup.style.display = 'block';
+    if (passGroup) passGroup.style.display = 'block';
+    if (passLabel) passLabel.innerText = 'رمز المرور';
+    
+    unameInput.focus();
+}
+
 // --- AUTHENTICATION FLOW (LOGIN/LOGOUT) ---
 function handleLogin(e) {
     if (e) e.preventDefault();
@@ -3626,35 +4102,7 @@ function handleLogin(e) {
         document.getElementById('login-container').style.display = 'none';
         document.getElementById('app-container').style.display = 'flex';
         
-        // Set sidebar user details
-        document.getElementById('sidebar-user-fullname').innerText = user.name;
-        document.getElementById('sidebar-user-role').innerText = user.role === 'manager' ? 'مدير النظام' : 'كاشير / موظف';
-        
-        // Restrict sidebar items visual according to role permissions
-        if (user.role === 'cashier') {
-            const perms = user.permissions || ['invoice'];
-            document.querySelectorAll('.nav-item').forEach(item => {
-                const tab = item.dataset.tab;
-                if (!perms.includes(tab)) {
-                    item.style.display = 'none';
-                } else {
-                    item.style.display = 'block';
-                }
-            });
-            
-            if (perms.includes('invoice')) {
-                switchTab('invoice');
-            } else if (perms.length > 0) {
-                switchTab(perms[0]);
-            } else {
-                document.querySelectorAll('.workspace-panel').forEach(p => p.classList.remove('active'));
-            }
-        } else {
-            document.querySelectorAll('.nav-item').forEach(item => {
-                item.style.display = 'block';
-            });
-            switchTab('invoice');
-        }
+        setupRoleBasedUI(user);
         
         playBeep('success');
         
@@ -3678,6 +4126,8 @@ function handleLogout() {
     document.getElementById('login-container').style.display = 'flex';
     document.getElementById('login-uname').value = '';
     document.getElementById('login-pass').value = '';
+    
+    resetLoginScreen();
     
     playBeep('success');
 }
@@ -3704,31 +4154,13 @@ async function checkSession() {
         document.getElementById('login-container').style.display = 'none';
         document.getElementById('app-container').style.display = 'flex';
         
-        document.getElementById('sidebar-user-fullname').innerText = user.name;
-        document.getElementById('sidebar-user-role').innerText = user.role === 'manager' ? 'مدير النظام' : 'كاشير / موظف';
-        
-        if (user.role === 'cashier') {
-            const perms = user.permissions || ['invoice'];
-            document.querySelectorAll('.nav-item').forEach(item => {
-                const tab = item.dataset.tab;
-                if (!perms.includes(tab)) {
-                    item.style.display = 'none';
-                } else {
-                    item.style.display = 'block';
-                }
-            });
-            switchTab('invoice');
-        } else {
-            document.querySelectorAll('.nav-item').forEach(item => {
-                item.style.display = 'block';
-            });
-            switchTab('invoice');
-        }
+        setupRoleBasedUI(user);
         
         initClocks();
     } else {
         document.getElementById('app-container').style.display = 'none';
         document.getElementById('login-container').style.display = 'flex';
+        resetLoginScreen();
     }
     // Load saved theme preference
     const savedTheme = localStorage.getItem('vape_theme');
@@ -3748,6 +4180,13 @@ async function checkSession() {
     // Setup listeners
     setupBarcodeListener();
     initProductAutocomplete();
+    
+    const outInput = document.getElementById('salary-amount-out');
+    const inInput = document.getElementById('salary-amount-in');
+    if (outInput && inInput) {
+        outInput.addEventListener('input', () => { if (outInput.value) inInput.value = ''; });
+        inInput.addEventListener('input', () => { if (inInput.value) outInput.value = ''; });
+    }
     
     // Check for employee salaries
     checkSalaryNotifications();
@@ -4059,6 +4498,360 @@ function clearInventory() {
     playBeep('success');
     
     alert("تم تصفير المخزن بالكامل بنجاح. يمكنك الآن إضافة بضائعك الخاصة.");
+}
+
+// --- REPLACE PRODUCT TRANSACTION SYSTEM ---
+let replaceOldProduct = null;
+let replaceNewProduct = null;
+
+function openReplaceModal() {
+    replaceOldProduct = null;
+    replaceNewProduct = null;
+    document.getElementById('replace-old-barcode').value = '';
+    document.getElementById('replace-new-barcode').value = '';
+    const oldDetails = document.getElementById('replace-old-details');
+    const newDetails = document.getElementById('replace-new-details');
+    if (oldDetails) {
+        oldDetails.style.display = 'none';
+        oldDetails.innerText = '';
+    }
+    if (newDetails) {
+        newDetails.style.display = 'none';
+        newDetails.innerText = '';
+    }
+    const summaryBox = document.getElementById('replace-summary-box');
+    if (summaryBox) summaryBox.style.display = 'none';
+    
+    document.getElementById('replace-modal').classList.add('active');
+}
+
+function closeReplaceModal() {
+    document.getElementById('replace-modal').classList.remove('active');
+}
+
+function validateReplaceOldProduct(barcode) {
+    const detailsDiv = document.getElementById('replace-old-details');
+    if (!detailsDiv) return;
+    
+    if (!barcode) {
+        detailsDiv.style.display = 'none';
+        replaceOldProduct = null;
+        updateReplaceSummary();
+        return;
+    }
+    
+    const prod = AppState.products.find(p => p.barcode === barcode.trim());
+    if (prod) {
+        replaceOldProduct = prod;
+        detailsDiv.innerHTML = `<i class="fa-solid fa-circle-check"></i> تم العثور: <strong>${prod.name}</strong><br>السعر: ${prod.price.toLocaleString()} د.ع`;
+        detailsDiv.style.background = 'rgba(16, 185, 129, 0.1)';
+        detailsDiv.style.color = '#10b981';
+        detailsDiv.style.display = 'block';
+    } else {
+        replaceOldProduct = null;
+        detailsDiv.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> هذا الباركود غير مسجل في المخزن!`;
+        detailsDiv.style.background = 'rgba(239, 68, 68, 0.1)';
+        detailsDiv.style.color = 'var(--danger)';
+        detailsDiv.style.display = 'block';
+    }
+    updateReplaceSummary();
+}
+
+function validateReplaceNewProduct(barcode) {
+    const detailsDiv = document.getElementById('replace-new-details');
+    if (!detailsDiv) return;
+    
+    if (!barcode) {
+        detailsDiv.style.display = 'none';
+        replaceNewProduct = null;
+        updateReplaceSummary();
+        return;
+    }
+    
+    const prod = AppState.products.find(p => p.barcode === barcode.trim());
+    if (prod) {
+        if (prod.qty <= 0) {
+            replaceNewProduct = null;
+            detailsDiv.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> نفذ من المخزن! الكمية الحالية: 0`;
+            detailsDiv.style.background = 'rgba(239, 68, 68, 0.1)';
+            detailsDiv.style.color = 'var(--danger)';
+            detailsDiv.style.display = 'block';
+        } else {
+            replaceNewProduct = prod;
+            detailsDiv.innerHTML = `<i class="fa-solid fa-circle-check"></i> تم العثور: <strong>${prod.name}</strong><br>السعر: ${prod.price.toLocaleString()} د.ع | المتاح: ${prod.qty}`;
+            detailsDiv.style.background = 'rgba(59, 130, 246, 0.1)';
+            detailsDiv.style.color = 'var(--primary)';
+            detailsDiv.style.display = 'block';
+        }
+    } else {
+        replaceNewProduct = null;
+        detailsDiv.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> هذا الباركود غير مسجل في المخزن!`;
+        detailsDiv.style.background = 'rgba(239, 68, 68, 0.1)';
+        detailsDiv.style.color = 'var(--danger)';
+        detailsDiv.style.display = 'block';
+    }
+    updateReplaceSummary();
+}
+
+function updateReplaceSummary() {
+    const summaryBox = document.getElementById('replace-summary-box');
+    const diffDisplay = document.getElementById('replace-difference-display');
+    const noteDisplay = document.getElementById('replace-direction-note');
+    
+    if (!replaceOldProduct || !replaceNewProduct) {
+        if (summaryBox) summaryBox.style.display = 'none';
+        return;
+    }
+    
+    const diff = replaceNewProduct.price - replaceOldProduct.price;
+    if (summaryBox) summaryBox.style.display = 'block';
+    if (diffDisplay) {
+        diffDisplay.innerText = `${Math.abs(diff).toLocaleString()} د.ع`;
+    }
+    
+    if (diff > 0) {
+        if (noteDisplay) noteDisplay.innerText = `المنتج الجديد أغلى. يجب على الزبون دفع فرق ${diff.toLocaleString()} د.ع للمحل.`;
+        if (diffDisplay) diffDisplay.style.color = 'var(--primary)';
+    } else if (diff < 0) {
+        if (noteDisplay) noteDisplay.innerText = `المنتج الجديد أرخص. يجب على المحل إرجاع فرق ${Math.abs(diff).toLocaleString()} د.ع للزبون.`;
+        if (diffDisplay) diffDisplay.style.color = 'var(--danger)';
+    } else {
+        if (noteDisplay) noteDisplay.innerText = `المنتجان متساويان في السعر. عملية استبدال متعادلة.`;
+        if (diffDisplay) diffDisplay.style.color = 'var(--text-main)';
+    }
+}
+
+function handleReplaceProduct(e) {
+    if (e) e.preventDefault();
+    
+    if (!replaceOldProduct || !replaceNewProduct) {
+        alert("يرجى إدخال وقراءة باركود المنتج القديم والجديد بنجاح أولاً!");
+        return;
+    }
+    
+    if (replaceNewProduct.qty <= 0) {
+        alert("عذراً، المنتج البديل نفذ تماماً من المخزن!");
+        return;
+    }
+    
+    // 1. Update inventories
+    const oldP = AppState.products.find(p => p.id === replaceOldProduct.id);
+    const newP = AppState.products.find(p => p.id === replaceNewProduct.id);
+    
+    if (oldP) oldP.qty += 1; // Return returned item to stock
+    if (newP) newP.qty -= 1; // Decrement replaced item from stock
+    
+    // 2. Create transaction record
+    const diff = newP.price - oldP.price;
+    const txId = "REP-" + Date.now().toString().slice(-8);
+    const transaction = {
+        id: txId,
+        type: 'sale', // type 'sale' to show in sales summaries
+        isReplacement: true,
+        items: [
+            {
+                id: oldP.id,
+                name: oldP.name + " (مرتجع استبدال)",
+                price: oldP.price,
+                cost: oldP.cost,
+                quantity: -1, // Negative quantity representing return
+                discount: 0
+            },
+            {
+                id: newP.id,
+                name: newP.name + " (بديل استبدال)",
+                price: newP.price,
+                cost: newP.cost,
+                quantity: 1, // Positive quantity representing take
+                discount: 0
+            }
+        ],
+        subtotal: diff,
+        discount: 0,
+        total: diff,
+        timestamp: new Date().toISOString(),
+        createdBy: AppState.currentUser ? AppState.currentUser.name : "كاشير"
+    };
+    
+    AppState.transactions.push(transaction);
+    AppState.saveAll();
+    
+    // Sync to Cloud
+    SyncManager.dispatchSync("sales", transaction, transaction.id);
+    SyncManager.syncToSheets("products", AppState.products);
+    
+    playBeep('checkout');
+    alert(`تمت عملية الاستبدال بنجاح!\nالفرق المالي: ${diff.toLocaleString()} د.ع`);
+    
+    closeReplaceModal();
+    
+    // Refresh active workspace tab
+    const activeTab = document.querySelector('.nav-item.active').dataset.tab;
+    if (activeTab === 'inventory') {
+        renderInventoryTable();
+    } else if (activeTab === 'reports') {
+        renderReportsDashboard();
+    }
+}
+
+// --- DEBTS & REPAYMENTS MANAGEMENT SYSTEM ---
+function toggleCreditFields() {
+    const isCredit = document.getElementById('is-credit-sale').checked;
+    document.getElementById('credit-fields').style.display = isCredit ? 'block' : 'none';
+    if (isCredit) {
+        document.getElementById('credit-customer-name').focus();
+    } else {
+        document.getElementById('credit-customer-name').value = '';
+    }
+}
+
+function renderDebtsList() {
+    const listBody = document.getElementById('debts-list-body');
+    if (!listBody) return;
+    
+    listBody.innerHTML = '';
+    const query = document.getElementById('debts-search-input').value.toLowerCase().trim();
+    
+    if (!AppState.debts) AppState.debts = [];
+    
+    // Filter active debtors
+    const filtered = AppState.debts.filter(d => 
+        d.customerName.toLowerCase().includes(query)
+    );
+    
+    let totalOutstanding = 0;
+    AppState.debts.forEach(d => totalOutstanding += d.amount);
+    
+    const totalLabel = document.getElementById('debts-stat-total');
+    if (totalLabel) totalLabel.innerText = `${totalOutstanding.toLocaleString()} د.ع`;
+    
+    const countLabel = document.getElementById('debts-stat-count');
+    if (countLabel) countLabel.innerText = AppState.debts.filter(d => d.amount > 0).length;
+    
+    if (filtered.length === 0) {
+        listBody.innerHTML = `<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:20px;">لا توجد حسابات ذمم مطابقة.</td></tr>`;
+        return;
+    }
+    
+    filtered.forEach(d => {
+        listBody.innerHTML += `
+            <tr style="cursor:pointer;" onclick="selectDebtor('${d.id}')">
+                <td><strong>${d.customerName}</strong></td>
+                <td class="price-value" style="color:var(--danger); font-weight:800;">${d.amount.toLocaleString()} د.ع</td>
+                <td style="text-align: center;">
+                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); selectDebtor('${d.id}')">تفاصيل ودفع</button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function selectDebtor(debtorId) {
+    if (!AppState.debts) AppState.debts = [];
+    const debtor = AppState.debts.find(d => d.id === debtorId);
+    if (!debtor) return;
+    
+    const emptyPlaceholder = document.getElementById('debtor-empty-placeholder');
+    if (emptyPlaceholder) emptyPlaceholder.style.display = 'none';
+    
+    const detailPanel = document.getElementById('debtor-detail-panel');
+    if (detailPanel) detailPanel.style.display = 'block';
+    
+    document.getElementById('debtor-name-display').innerText = debtor.customerName;
+    document.getElementById('debtor-balance-display').innerText = `${debtor.amount.toLocaleString()} د.ع`;
+    document.getElementById('debtor-id-input').value = debtor.id;
+    document.getElementById('repay-amount').value = '';
+    document.getElementById('repay-notes').value = '';
+    
+    // Render debtor history
+    const historyBody = document.getElementById('debtor-history-body');
+    if (historyBody) {
+        historyBody.innerHTML = '';
+        if (!debtor.history || debtor.history.length === 0) {
+            historyBody.innerHTML = `<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:10px;">لا توجد عمليات مسجلة.</td></tr>`;
+        } else {
+            const sorted = [...debtor.history].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+            sorted.forEach(h => {
+                const dt = new Date(h.timestamp).toLocaleString('ar-IQ', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                const typeText = h.type === 'charge' ? 'شراء بالدين' : 'تسديد دفعة';
+                const color = h.type === 'charge' ? 'var(--danger)' : 'var(--primary)';
+                const prefix = h.type === 'charge' ? '+' : '-';
+                
+                historyBody.innerHTML += `
+                    <tr>
+                        <td>${dt}</td>
+                        <td>${h.description || typeText}</td>
+                        <td class="price-value" style="color:${color}; font-weight:700;">${prefix}${h.amount.toLocaleString()} د.ع</td>
+                    </tr>
+                `;
+            });
+        }
+    }
+}
+
+function handleRepayDebt(e) {
+    if (e) e.preventDefault();
+    
+    const debtorId = document.getElementById('debtor-id-input').value;
+    const repayAmount = parseInt(document.getElementById('repay-amount').value) || 0;
+    const repayNotes = document.getElementById('repay-notes').value.trim();
+    
+    if (!debtorId || repayAmount <= 0) {
+        alert("يرجى إدخال مبلغ تسديد صحيح!");
+        return;
+    }
+    
+    const debtor = AppState.debts.find(d => d.id === debtorId);
+    if (!debtor) return;
+    
+    if (repayAmount > debtor.amount) {
+        alert(`المبلغ المدخل (${repayAmount.toLocaleString()} د.ع) أكبر من الدين المتبقي (${debtor.amount.toLocaleString()} د.ع)!`);
+        return;
+    }
+    
+    // Subtract from debt
+    debtor.amount -= repayAmount;
+    
+    const pmtId = "PMT-" + Date.now().toString().slice(-8);
+    if (!debtor.history) debtor.history = [];
+    debtor.history.push({
+        id: pmtId,
+        type: 'payment',
+        amount: repayAmount,
+        timestamp: new Date().toISOString(),
+        description: repayNotes || "تسديد من الحساب"
+    });
+    
+    // Create master transaction
+    const isFull = debtor.amount === 0;
+    const descriptionText = isFull 
+        ? `تسديد كامل الدين القديم للمدين: ${debtor.customerName}` 
+        : `تسديد دفعة من دين قديم للمدين: ${debtor.customerName} (باقي: ${debtor.amount.toLocaleString()} د.ع)`;
+    
+    const newTx = {
+        id: pmtId,
+        type: 'debt_payment',
+        amount: repayAmount,
+        customerName: debtor.customerName,
+        remainingAmount: debtor.amount,
+        description: descriptionText + (repayNotes ? ` - ملاحظة: ${repayNotes}` : ''),
+        timestamp: new Date().toISOString(),
+        createdBy: AppState.currentUser ? AppState.currentUser.name : "كاشير"
+    };
+    
+    AppState.transactions.push(newTx);
+    AppState.saveAll();
+    
+    // Sync to Cloud
+    SyncManager.dispatchSync("debt_payments", newTx, newTx.id);
+    SyncManager.dispatchSync("debts", AppState.debts, "debts_list");
+    
+    playBeep('success');
+    alert(`تم تسجيل تسديد مبلغ ${repayAmount.toLocaleString()} د.ع للمدين ${debtor.customerName} بنجاح.`);
+    
+    // Refresh UI
+    renderDebtsList();
+    selectDebtor(debtorId);
 }
 
 // Initialize on page load
