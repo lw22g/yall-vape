@@ -76,6 +76,7 @@ function getOrCreateSheet(ss, type) {
     case "salaries": sheetName = "سحوبات ورواتب الموظفين"; break;
     case "daily_summary": sheetName = "الأرشيف والتقارير اليومية"; break;
     case "treasury": sheetName = "مطابقات الخزينة"; break;
+    case "new_products": sheetName = "تقرير إضافة المنتجات"; break;
     default: sheetName = "عام";
   }
   
@@ -98,6 +99,8 @@ function getHeadersForType(type) {
       return ["التاريخ", "رقم الأرشيف", "إجمالي الوارد (المبيعات)", "إجمالي الصادر (المصروفات)", "صافي الدخل اليومي", "رصيد الخزينة الفعلي", "الفارق/العجز/الزيادة", "المسؤول عن التصفير"];
     case "treasury":
       return ["التاريخ والوقت", "الرصيد الدفتري (النظام)", "الرصيد الفعلي (المحل)", "الفارق", "الحالة (مطابق/عجز/زيادة)", "الملاحظات وتتبع النقص", "المسؤول"];
+    case "new_products":
+      return ["التاريخ والوقت", "اسم المنتج", "الكمية المضافة", "رقم الفاتورة", "المصدر / المورد"];
     default:
       return ["التاريخ والوقت", "تفاصيل البيانات"];
   }
@@ -169,6 +172,15 @@ function objectToRow(type, item, headers) {
       item.createdBy || ""
     ];
   } 
+  else if (type === "new_products") {
+    row = [
+      item.date || new Date().toISOString(),
+      item.name || "",
+      item.qty || 0,
+      item.invoice || "",
+      item.source || ""
+    ];
+  }
   else {
     row = [
       new Date().toISOString(),

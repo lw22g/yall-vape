@@ -90,6 +90,13 @@ const AppState = {
         this.debts = [];
         this.needsReconciliation = false;
         
+        this.settings.cashierDiscounts = [
+            { from: 60000, to: 99999999, maxDiscount: 15000 },
+            { from: 35000, to: 59999, maxDiscount: 10000 },
+            { from: 22000, to: 34999, maxDiscount: 5000 },
+            { from: 10000, to: 21999, maxDiscount: 2000 }
+        ];
+        
         this.saveAll();
     },
     
@@ -111,6 +118,16 @@ const AppState = {
             const savedSettings = localStorage.getItem('vape_settings');
             if (savedSettings) {
                 this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
+                
+                // Ensure cashierDiscounts exists for upgrades
+                if (!this.settings.cashierDiscounts) {
+                    this.settings.cashierDiscounts = [
+                        { from: 60000, to: 99999999, maxDiscount: 15000 },
+                        { from: 35000, to: 59999, maxDiscount: 10000 },
+                        { from: 22000, to: 34999, maxDiscount: 5000 },
+                        { from: 10000, to: 21999, maxDiscount: 2000 }
+                    ];
+                }
                 
                 // Ensure firebaseConfig object exists without overwriting user values
                 if (!this.settings.firebaseConfig) {
@@ -290,7 +307,8 @@ const SyncManager = {
                 cloudUsers,
                 cloudSettings,
                 cloudDebts,
-                cloudDebtPayments
+                cloudDebtPayments,
+                cloudNewProducts
             ] = await Promise.all([
                 this.fetchFromFirebase("inventory", "inventory_master"),
                 this.fetchFromFirebase("employees_master", "employees_master"),
@@ -302,7 +320,8 @@ const SyncManager = {
                 this.fetchFromFirebase("system_users", "users_list"),
                 this.fetchFromFirebase("system_config", "settings_config"),
                 this.fetchFromFirebase("customer_debts", "debts_list"),
-                this.fetchFromFirebase("debt_payments")
+                this.fetchFromFirebase("debt_payments"),
+                this.fetchFromFirebase("new_products_report")
             ]);
             
             let hasCloudData = false;
@@ -388,6 +407,18 @@ const SyncManager = {
             } else if (AppState.archives.length > 0) {
                 AppState.archives.forEach(a => this.dispatchSync("daily_summary", a, a.archiveId));
             }
+
+            // Merge or Seed New Products Report
+            if (cloudNewProducts && Array.isArray(cloudNewProducts)) {
+                cloudNewProducts.sort((a, b) => new Date(a.date) - new Date(b.date));
+                AppState.newProductsReport = cloudNewProducts;
+                hasCloudData = true;
+            } else if (AppState.newProductsReport && AppState.newProductsReport.length > 0) {
+                AppState.newProductsReport.forEach(r => {
+                    const docId = "NP-" + new Date(r.date).getTime();
+                    this.dispatchSync("new_products", r, docId);
+                });
+            }
             
             AppState.saveAll();
             return hasCloudData;
@@ -418,6 +449,7 @@ const SyncManager = {
             case "settings": firebaseCollection = "system_config"; break;
             case "debts": firebaseCollection = "customer_debts"; break;
             case "debt_payments": firebaseCollection = "debt_payments"; break;
+            case "new_products": firebaseCollection = "new_products_report"; break;
             case "sales_delete": firebaseCollection = "sales_invoices"; isDelete = true; break;
             case "expenses_delete": firebaseCollection = "expenses"; isDelete = true; break;
             case "salaries_delete": firebaseCollection = "salary_transactions"; isDelete = true; break;
@@ -882,6 +914,67 @@ function initProductAutocomplete() {
     });
 }
 
+// Autocomplete inside product adding/editing modal (search by Name to retrieve Barcode & details)
+function initModalProductAutocomplete() {
+    const input = document.getElementById('prod-name');
+    const resultsBox = document.getElementById('modal-prod-name-results');
+    
+    if (!input || !resultsBox) return;
+    
+    input.addEventListener('input', function() {
+        const query = input.value.trim().toLowerCase();
+        resultsBox.innerHTML = '';
+        
+        if (query.length < 2) {
+            resultsBox.style.display = 'none';
+            return;
+        }
+        
+        const matched = AppState.products.filter(p => 
+            p.name.toLowerCase().includes(query)
+        );
+        
+        if (matched.length === 0) {
+            resultsBox.style.display = 'none';
+        } else {
+            matched.forEach(p => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'search-result-item';
+                itemDiv.innerHTML = `
+                    <span class="search-result-name" style="font-weight:700; text-align: right;">${p.name}</span>
+                    <span class="search-result-details" style="font-family:'Inter'; font-size: 11px; color: var(--text-muted);">
+                        ${p.barcode} | ${p.price.toLocaleString()} د.ع
+                    </span>
+                `;
+                itemDiv.addEventListener('click', function() {
+                    document.getElementById('prod-id').value = p.id;
+                    document.getElementById('prod-barcode').value = p.barcode;
+                    document.getElementById('prod-name').value = p.name;
+                    document.getElementById('prod-cost').value = p.cost;
+                    document.getElementById('prod-price').value = p.price;
+                    document.getElementById('prod-qty').value = p.qty;
+                    document.getElementById('prod-source').value = p.source || "";
+                    document.getElementById('modal-prod-title').innerText = "تعديل بيانات المنتج (موجود مسبقاً)";
+                    
+                    toggleProductQtyFields(true, p);
+                    playBeep('success');
+                    
+                    resultsBox.style.display = 'none';
+                });
+                resultsBox.appendChild(itemDiv);
+            });
+            resultsBox.style.display = 'block';
+        }
+    });
+    
+    // Close dropdown on outside click
+    document.addEventListener('click', function(e) {
+        if (e.target !== input && e.target !== resultsBox) {
+            resultsBox.style.display = 'none';
+        }
+    });
+}
+
 function toggleDeliveryFields() {
     const isChecked = document.getElementById('is-delivery-sale').checked;
     const fieldsDiv = document.getElementById('delivery-fields');
@@ -1004,8 +1097,8 @@ function processCheckout() {
         SyncManager.dispatchSync("debts", AppState.debts, "debts_list");
     }
     
-    // Update local products data to Google Sheets too
-    SyncManager.syncToSheets("products", AppState.products);
+    // Update local products data to Google Sheets and Firestore too
+    SyncManager.dispatchSync("products", AppState.products, "inventory_master");
     
     // 4. Render receipt print preview before clearing
     buildReceiptPrintPreview(transaction);
@@ -1761,7 +1854,8 @@ function commitTreasuryReconciliation(e) {
     
     // Recalculate totals
     const startingCash = AppState.settings.startingCash || 0;
-    let totalSales = 0;
+    let totalCashSales = 0;
+    let totalDebtRepayments = 0;
     let totalExpenses = 0;
     
     const today = new Date();
@@ -1771,12 +1865,21 @@ function commitTreasuryReconciliation(e) {
         const d = new Date(t.timestamp || Date.now());
         const tStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         if (tStr === todayStr) {
-            if (t.type === 'sale') totalSales += t.total;
-            else if (t.type === 'expense' || t.type === 'salary') totalExpenses += t.amount;
+            if (t.type === 'sale') {
+                if (t.paymentType !== 'credit') {
+                    totalCashSales += t.total;
+                }
+            } else if (t.type === 'debt_payment') {
+                totalDebtRepayments += t.amount;
+            } else if (t.type === 'salary' && t.direction === 'in') {
+                totalCashSales += t.amount;
+            } else if (t.type === 'expense' || t.type === 'salary') {
+                totalExpenses += t.amount;
+            }
         }
     });
     
-    const systemBalance = startingCash + totalSales - totalExpenses;
+    const systemBalance = startingCash + totalCashSales + totalDebtRepayments - totalExpenses;
     const difference = physicalAmount - systemBalance;
     
     let status = "مطابق";
@@ -1828,27 +1931,31 @@ function renderReportsDashboard() {
         return tStr === todayStr;
     });
 
-    let totalSales = 0;
+    let totalSales = 0; // Cash sales only
+    let creditSales = 0; // Unpaid credit sales
     let totalCashSales = 0;
     let totalDebtRepayments = 0;
     let totalExpenses = 0;
     
     todaysTransactions.forEach(t => {
         if (t.type === 'sale') {
-            totalSales += t.total;
-            if (t.paymentType !== 'credit') {
+            if (t.paymentType === 'credit') {
+                creditSales += t.total;
+            } else {
+                totalSales += t.total;
                 totalCashSales += t.total;
             }
         } else if (t.type === 'debt_payment') {
             totalDebtRepayments += t.amount;
         } else if (t.type === 'salary' && t.direction === 'in') {
+            totalSales += t.amount;
             totalCashSales += t.amount;
         } else if (t.type === 'expense' || t.type === 'salary') {
             totalExpenses += t.amount;
         }
     });
     
-    const netProfit = totalSales - totalExpenses;
+    const netProfit = totalSales + totalDebtRepayments - totalExpenses;
     const systemExpected = startingCash + totalCashSales + totalDebtRepayments - totalExpenses;
     
     // Update labels
@@ -1861,9 +1968,8 @@ function renderReportsDashboard() {
     if (todayOpeningLabel) todayOpeningLabel.innerText = `${startingCash.toLocaleString()} د.ع`;
     if (todaySalesLabel) {
         // Display total sales, and if there are credit sales, show details
-        const creditSalesAmt = totalSales - totalCashSales;
-        if (creditSalesAmt > 0) {
-            todaySalesLabel.innerHTML = `<span style="font-size:16px;">${totalSales.toLocaleString()} د.ع</span><br><small style="font-size:10px; font-weight:normal; color:var(--text-muted);">نقدي: ${totalCashSales.toLocaleString()} | آجل: ${creditSalesAmt.toLocaleString()}</small>`;
+        if (creditSales > 0) {
+            todaySalesLabel.innerHTML = `<span style="font-size:16px;">${totalSales.toLocaleString()} د.ع</span><br><small style="font-size:10px; font-weight:normal; color:var(--text-muted);">نقدي: ${totalSales.toLocaleString()} | آجل (غير واصل): ${creditSales.toLocaleString()}</small>`;
         } else {
             todaySalesLabel.innerText = `${totalSales.toLocaleString()} د.ع`;
         }
@@ -1879,7 +1985,7 @@ function renderReportsDashboard() {
     const listBody = document.getElementById('reports-transactions-body');
     if (listBody) {
         listBody.innerHTML = '';
-        const sorted = [...todaysTransactions].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const sorted = [...todaysTransactions].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
         
         if (sorted.length === 0) {
             listBody.innerHTML = `<tr><td colspan="6" class="text-center" style="color:var(--text-muted); padding:30px;">لم يتم إجراء أي معاملات مالية اليوم بعد.</td></tr>`;
@@ -1903,6 +2009,7 @@ function renderReportsDashboard() {
                     
                     if (tx.paymentType === 'credit') {
                         typeText += `<br><small style="color: var(--accent);"><i class="fa-solid fa-hand-holding-hand"></i> مبيعات بالدين للعميل: <strong>${tx.customerName}</strong></small>`;
+                        priceColor = '#666';
                     }
                     
                     if (tx.isDelivery) {
@@ -1925,6 +2032,12 @@ function renderReportsDashboard() {
                 }
                 
                 const amt = tx.type === 'sale' ? tx.total : tx.amount;
+                let displayAmt = amt;
+                if (tx.type === 'sale' && amt < 0) {
+                    priceColor = 'var(--danger)';
+                    prefix = '-';
+                    displayAmt = Math.abs(amt);
+                }
                 
                 const showActions = AppState.currentUser && AppState.currentUser.role === 'manager';
                 const actionsHtml = showActions ? `
@@ -1941,7 +2054,7 @@ function renderReportsDashboard() {
                         <td style="font-family:'Inter'; font-size:12px;">${tx.id}</td>
                         <td>${dt}</td>
                         <td>${typeText}</td>
-                        <td class="price-value" style="color:${priceColor}; font-weight:800;">${prefix}${amt.toLocaleString()} د.ع</td>
+                        <td class="price-value" style="color:${priceColor}; font-weight:800;">${prefix}${displayAmt.toLocaleString()} د.ع</td>
                         <td>${tx.createdBy}</td>
                         ${actionsHtml}
                     </tr>
@@ -2036,14 +2149,24 @@ function openArchiveDetails(dateStr) {
     });
 
     // Calculate totals for the day
-    let totalSales = 0;
+    let totalSales = 0; // Cash sales only
+    let totalDebtPayments = 0;
     let totalExpenses = 0;
     
     dayTransactions.forEach(t => {
-        if (t.type === 'sale') totalSales += t.total;
-        else if (t.type === 'expense' || t.type === 'salary') totalExpenses += t.amount;
+        if (t.type === 'sale') {
+            if (t.paymentType !== 'credit') {
+                totalSales += t.total;
+            }
+        } else if (t.type === 'debt_payment') {
+            totalDebtPayments += t.amount;
+        } else if (t.type === 'salary' && t.direction === 'in') {
+            totalSales += t.amount;
+        } else if (t.type === 'expense' || t.type === 'salary') {
+            totalExpenses += t.amount;
+        }
     });
-    const netProfit = totalSales - totalExpenses;
+    const netProfit = totalSales + totalDebtPayments - totalExpenses;
 
     // Update Archive Summary Modal
     document.getElementById('archive-modal-total-in').innerText = `${totalSales.toLocaleString()} د.ع`;
@@ -2089,9 +2212,21 @@ function openArchiveDetails(dateStr) {
                 typeText = `رواتب: سحبة لـ ${tx.employeeName}`;
                 priceColor = 'var(--danger)';
                 prefix = '-';
+            } else if (tx.type === 'debt_payment') {
+                typeText = tx.description;
+                priceColor = 'var(--primary)';
+                prefix = '+';
             }
             
             const amt = tx.type === 'sale' ? tx.total : tx.amount;
+            let displayAmt = amt;
+            if (tx.type === 'sale' && amt < 0) {
+                priceColor = 'var(--danger)';
+                prefix = '-';
+                displayAmt = Math.abs(amt);
+            } else if (tx.type === 'sale' && tx.paymentType === 'credit') {
+                priceColor = '#666';
+            }
             
             const showActions = AppState.currentUser && AppState.currentUser.role === 'manager';
         const actionsHtml = showActions ? `
@@ -2108,7 +2243,7 @@ function openArchiveDetails(dateStr) {
                 <td style="font-family:'Inter'; font-size:12px;">${tx.id}</td>
                 <td>${dt}</td>
                 <td>${typeText}</td>
-                <td class="price-value" style="color:${priceColor}; font-weight:800;">${prefix}${amt.toLocaleString()} د.ع</td>
+                <td class="price-value" style="color:${priceColor}; font-weight:800;">${prefix}${displayAmt.toLocaleString()} د.ع</td>
                 <td>${tx.createdBy}</td>
                 ${actionsHtml}
             </tr>
@@ -2143,19 +2278,26 @@ function printDailyReport(mode = 'print') {
     const sales = todaysTransactions.filter(t => t.type === 'sale');
     const expenses = todaysTransactions.filter(t => t.type === 'expense');
     const salaries = todaysTransactions.filter(t => t.type === 'salary');
+    const debtPayments = todaysTransactions.filter(t => t.type === 'debt_payment');
     
     const startingCash = AppState.settings.startingCash || 0;
     let totalSalesAmt = 0;
     let totalExpensesAmt = 0;
     let totalSalariesAmt = 0;
+    let totalDebtPaymentsAmt = 0;
     
-    sales.forEach(s => totalSalesAmt += s.total);
+    sales.forEach(s => {
+        if (s.paymentType !== 'credit') {
+            totalSalesAmt += s.total;
+        }
+    });
     expenses.forEach(e => totalExpensesAmt += e.amount);
     salaries.forEach(s => totalSalariesAmt += s.amount);
+    debtPayments.forEach(d => totalDebtPaymentsAmt += d.amount);
     
     const totalOut = totalExpensesAmt + totalSalariesAmt;
-    const netProfit = totalSalesAmt - totalOut;
-    const systemExpected = startingCash + totalSalesAmt - totalOut;
+    const netProfit = totalSalesAmt + totalDebtPaymentsAmt - totalOut;
+    const systemExpected = startingCash + totalSalesAmt + totalDebtPaymentsAmt - totalOut;
     
     // Build Unified Ledger Rows
     let unifiedRows = '';
@@ -2170,11 +2312,15 @@ function printDailyReport(mode = 'print') {
                 dt = new Date(tx.timestamp || tx.date || Date.now()).toLocaleString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             } catch(e){}
             let typeText = '';
-            let priceColor = '#000';
+            let priceColor = '#2e7d32'; // Green for incoming
             let prefix = '+';
             
             if (tx.type === 'sale') {
                 typeText = tx.items && tx.items.length > 0 ? tx.items.map(it => `${it.name} (العدد: ${it.quantity})`).join('<br>') : 'فاتورة مبيعات واردة';
+                if (tx.paymentType === 'credit') {
+                    typeText += `<br><small style="color: #666; font-size:10px;">دين (غير واصل) للزبون: ${tx.customerName}</small>`;
+                    priceColor = '#666';
+                }
             } else if (tx.type === 'expense') {
                 typeText = `مصروفات: ${tx.category}`;
                 priceColor = '#d32f2f';
@@ -2183,16 +2329,26 @@ function printDailyReport(mode = 'print') {
                 typeText = `رواتب: سحبة لـ ${tx.employeeName}`;
                 priceColor = '#d32f2f';
                 prefix = '-';
+            } else if (tx.type === 'debt_payment') {
+                typeText = tx.description || `تسديد دين: ${tx.customerName}`;
+                priceColor = '#2e7d32';
+                prefix = '+';
             }
             
             const amt = tx.type === 'sale' ? tx.total : tx.amount;
+            let displayAmt = amt;
+            if (tx.type === 'sale' && amt < 0) {
+                priceColor = '#d32f2f';
+                prefix = '-';
+                displayAmt = Math.abs(amt);
+            }
             
             unifiedRows += `
                 <tr>
                     <td style="text-align: center; font-size:11px;">${tx.id}</td>
                     <td style="text-align: center;">${dt}</td>
                     <td style="text-align: right; padding-right: 10px;">${typeText}</td>
-                    <td style="text-align: left; color:${priceColor}; font-weight:bold;">${prefix}${amt.toLocaleString()} د.ع</td>
+                    <td style="text-align: left; color:${priceColor}; font-weight:bold;">${prefix}${displayAmt.toLocaleString()} د.ع</td>
                     <td style="text-align: center;">${tx.createdBy}</td>
                 </tr>
             `;
@@ -2243,8 +2399,12 @@ function printDailyReport(mode = 'print') {
                 <strong>${startingCash.toLocaleString()} د.ع</strong>
             </div>
             <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
-                <span>إجمالي مبيعات اليوم (الوارد):</span>
+                <span>إجمالي مبيعات اليوم (الوارد النقدي):</span>
                 <strong>+${totalSalesAmt.toLocaleString()} د.ع</strong>
+            </div>
+            <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
+                <span>إجمالي تسديد الديون (الوارد):</span>
+                <strong>+${totalDebtPaymentsAmt.toLocaleString()} د.ع</strong>
             </div>
             <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
                 <span>إجمالي المصروفات العامة (الصادر):</span>
@@ -2472,22 +2632,30 @@ function printArchivedReport(archiveId, tempArc = null) {
     // Reconstruct starting cash with fallback
     const startingCash = arc.startingCash !== undefined ? arc.startingCash : (arc.systemBalance !== undefined ? Math.max(0, arc.systemBalance - arc.totalSales + arc.totalExpenses) : 0);
     
-    let totalSalesAmt = arc.totalSales || 0;
+    let totalSalesAmt = 0;
     let totalExpensesAmt = 0;
     let totalSalariesAmt = 0;
-    let totalDebtPaymentsAmt = 0;
+    let totalDebtPaymentsAmt = arc.totalDebtPayments || 0;
     
     if (transactions.length > 0) {
+        sales.forEach(s => {
+            if (s.paymentType !== 'credit') {
+                totalSalesAmt += s.total;
+            }
+        });
         expenses.forEach(e => totalExpensesAmt += e.amount);
         salaries.forEach(s => totalSalariesAmt += s.amount);
+        
+        totalDebtPaymentsAmt = 0;
         debtPayments.forEach(d => totalDebtPaymentsAmt += d.amount);
     } else {
+        totalSalesAmt = arc.totalSales || 0;
         totalExpensesAmt = arc.totalExpenses || 0;
     }
     
     const totalOut = totalExpensesAmt + totalSalariesAmt;
-    const netProfit = totalSalesAmt - totalOut;
-    const systemExpected = startingCash + totalSalesAmt - totalOut + totalDebtPaymentsAmt;
+    const netProfit = totalSalesAmt + totalDebtPaymentsAmt - totalOut;
+    const systemExpected = startingCash + totalSalesAmt + totalDebtPaymentsAmt - totalOut;
     
     // Build Unified Ledger Rows
     let unifiedRows = '';
@@ -2502,11 +2670,15 @@ function printArchivedReport(archiveId, tempArc = null) {
                 dt = new Date(tx.timestamp || tx.date || Date.now()).toLocaleString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             } catch(e){}
             let typeText = '';
-            let priceColor = '#000';
+            let priceColor = '#2e7d32'; // Green for incoming
             let prefix = '+';
             
             if (tx.type === 'sale') {
                 typeText = tx.items && tx.items.length > 0 ? tx.items.map(it => `${it.name} (العدد: ${it.quantity})`).join('<br>') : 'فاتورة مبيعات واردة';
+                if (tx.paymentType === 'credit') {
+                    typeText += `<br><small style="color: #666; font-size:10px;">دين (غير واصل) للزبون: ${tx.customerName}</small>`;
+                    priceColor = '#666';
+                }
             } else if (tx.type === 'expense') {
                 typeText = `مصروفات: ${tx.category}`;
                 priceColor = '#d32f2f';
@@ -2522,13 +2694,19 @@ function printArchivedReport(archiveId, tempArc = null) {
             }
             
             const amt = tx.type === 'sale' ? tx.total : tx.amount;
+            let displayAmt = amt;
+            if (tx.type === 'sale' && amt < 0) {
+                priceColor = '#d32f2f';
+                prefix = '-';
+                displayAmt = Math.abs(amt);
+            }
             
             unifiedRows += `
                 <tr>
                     <td style="text-align: center; font-size:11px;">${tx.id}</td>
                     <td style="text-align: center;">${dt}</td>
                     <td style="text-align: right; padding-right: 10px;">${typeText}</td>
-                    <td style="text-align: left; color:${priceColor}; font-weight:bold;">${prefix}${amt.toLocaleString()} د.ع</td>
+                    <td style="text-align: left; color:${priceColor}; font-weight:bold;">${prefix}${displayAmt.toLocaleString()} د.ع</td>
                     <td style="text-align: center;">${tx.createdBy}</td>
                 </tr>
             `;
@@ -2586,8 +2764,12 @@ function printArchivedReport(archiveId, tempArc = null) {
                 <strong>${startingCash.toLocaleString()} د.ع</strong>
             </div>
             <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
-                <span>إجمالي المبيعات (الوارد):</span>
+                <span>إجمالي مبيعات اليوم (الوارد النقدي):</span>
                 <strong>+${totalSalesAmt.toLocaleString()} د.ع</strong>
+            </div>
+            <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
+                <span>إجمالي تسديد الديون (الوارد):</span>
+                <strong>+${totalDebtPaymentsAmt.toLocaleString()} د.ع</strong>
             </div>
             <div class="print-totals-row" style="font-size: 12px; margin-bottom: 6px;">
                 <span>إجمالي المصروفات العامة (الصادر):</span>
@@ -2756,7 +2938,9 @@ function renderMonthlyBreakdownDetails() {
         return;
     }
     
-    let totalSales = 0;
+    let totalSales = 0; // Cash sales only
+    let creditSales = 0; // Unpaid credit sales
+    let totalDebtPayments = 0;
     let totalExpenses = 0;
     let totalSalaries = 0;
     
@@ -2771,20 +2955,29 @@ function renderMonthlyBreakdownDetails() {
         
         if (mKey === selectedMonth) {
             if (t.type === 'sale') {
-                totalSales += t.total;
+                if (t.paymentType === 'credit') {
+                    creditSales += t.total;
+                } else {
+                    totalSales += t.total;
+                }
                 t.items.forEach(it => {
                     let source = it.source || "غير محدد";
                     let cost = it.cost || 0;
-                    if (!it.source || it.cost === undefined) {
-                        const origProd = AppState.products.find(p => p.id === it.id);
-                        if (origProd) {
-                            source = origProd.source || "غير محدد";
-                            cost = origProd.cost || 0;
-                        }
+                    const origProd = AppState.products.find(p => p.id === it.id);
+                    if (origProd) {
+                        source = origProd.source || "غير محدد";
+                        cost = origProd.cost || 0;
+                    }
+                    
+                    let pName = it.name;
+                    if (origProd) {
+                        pName = origProd.name;
+                    } else if (pName) {
+                        pName = pName.replace(" (مرتجع استبدال)", "").replace(" (بديل استبدال)", "");
                     }
                     
                     if (!productSalesMap[it.id]) {
-                        productSalesMap[it.id] = { name: it.name, quantity: 0, totalPrice: 0 };
+                        productSalesMap[it.id] = { name: pName, quantity: 0, totalPrice: 0 };
                     }
                     productSalesMap[it.id].quantity += it.quantity;
                     productSalesMap[it.id].totalPrice += it.price * it.quantity;
@@ -2797,19 +2990,32 @@ function renderMonthlyBreakdownDetails() {
                     sourceSalesMap[source].totalCost += (cost * it.quantity);
                     sourceSalesMap[source].netProfit += ((it.price - cost) * it.quantity);
                 });
+            } else if (t.type === 'debt_payment') {
+                totalDebtPayments += t.amount;
             } else if (t.type === 'expense') {
                 totalExpenses += t.amount;
             } else if (t.type === 'salary') {
-                totalSalaries += t.amount;
+                if (t.direction === 'in') {
+                    totalSalaries -= t.amount;
+                } else {
+                    totalSalaries += t.amount;
+                }
             }
         }
     });
     
-    document.getElementById('month-total-sales').innerText = `${totalSales.toLocaleString()} د.ع`;
+    const salesTotalLabel = document.getElementById('month-total-sales');
+    if (salesTotalLabel) {
+        if (creditSales > 0 || totalDebtPayments > 0) {
+            salesTotalLabel.innerHTML = `<span style="font-size:16px;">${totalSales.toLocaleString()} د.ع</span><br><small style="font-size:10px; font-weight:normal; color:var(--text-muted);">نقدي: ${totalSales.toLocaleString()} | تسديد ديون: ${totalDebtPayments.toLocaleString()} | آجل: ${creditSales.toLocaleString()}</small>`;
+        } else {
+            salesTotalLabel.innerText = `${totalSales.toLocaleString()} د.ع`;
+        }
+    }
     document.getElementById('month-total-expenses').innerText = `${totalExpenses.toLocaleString()} د.ع`;
     document.getElementById('month-total-salaries').innerText = `${totalSalaries.toLocaleString()} د.ع`;
     
-    const netProfit = totalSales - (totalExpenses + totalSalaries);
+    const netProfit = totalSales + totalDebtPayments - (totalExpenses + totalSalaries);
     const netProfitLabel = document.getElementById('month-net-profit');
     netProfitLabel.innerText = `${netProfit.toLocaleString()} د.ع`;
     netProfitLabel.style.color = netProfit >= 0 ? 'var(--primary)' : 'var(--danger)';
@@ -2817,13 +3023,13 @@ function renderMonthlyBreakdownDetails() {
     const tbody = document.getElementById('monthly-items-breakdown-body');
     tbody.innerHTML = '';
     
-    const itemIds = Object.keys(productSalesMap);
+    const itemIds = Object.keys(productSalesMap).filter(id => productSalesMap[id].quantity > 0);
     if (itemIds.length === 0) {
         tbody.innerHTML = `<tr><td colspan="4" class="text-center" style="color:var(--text-muted); padding:20px;">لم يتم تسجيل مبيعات بضائع لهذا الشهر بعد.</td></tr>`;
     } else {
         itemIds.forEach(id => {
             const data = productSalesMap[id];
-            const avgPrice = Math.round(data.totalPrice / data.quantity);
+            const avgPrice = data.quantity > 0 ? Math.round(data.totalPrice / data.quantity) : 0;
             tbody.innerHTML += `
                 <tr>
                     <td style="font-weight:700;">${data.name}</td>
@@ -2838,7 +3044,7 @@ function renderMonthlyBreakdownDetails() {
     const sourceBody = document.getElementById('monthly-sources-breakdown-body');
     if (sourceBody) {
         sourceBody.innerHTML = '';
-        const sourceKeys = Object.keys(sourceSalesMap);
+        const sourceKeys = Object.keys(sourceSalesMap).filter(src => sourceSalesMap[src].quantity > 0);
         if (sourceKeys.length === 0) {
             sourceBody.innerHTML = `<tr><td colspan="5" class="text-center" style="color:var(--text-muted); padding:20px;">لا توجد بيانات متاحة.</td></tr>`;
         } else {
@@ -2878,8 +3084,16 @@ function renderMonthlyChartVisuals() {
         }
         
         if (t.type === 'sale') {
-            groups[mStr].sales += t.total;
-            groups[mStr].profit += t.total;
+            if (t.paymentType !== 'credit') {
+                groups[mStr].sales += t.total;
+                groups[mStr].profit += t.total;
+            }
+        } else if (t.type === 'debt_payment') {
+            groups[mStr].sales += t.amount;
+            groups[mStr].profit += t.amount;
+        } else if (t.type === 'salary' && t.direction === 'in') {
+            groups[mStr].sales += t.amount;
+            groups[mStr].profit += t.amount;
         } else if (t.type === 'expense' || t.type === 'salary') {
             groups[mStr].expenses += t.amount;
             groups[mStr].profit -= t.amount;
@@ -3190,6 +3404,7 @@ function handleSaveProduct(e) {
     
     let finalQty = qty;
     let addedQty = 0;
+    let addedReportEntry = null;
     
     if (id) {
         // Edit Mode
@@ -3202,14 +3417,15 @@ function handleSaveProduct(e) {
             AppState.products[prodIndex] = { id, barcode, name, cost, price, qty: finalQty, costUsd, source };
             
             if (addedQty > 0) {
-                if (!AppState.newProductsReport) AppState.newProductsReport = [];
-                AppState.newProductsReport.push({
+                addedReportEntry = {
                     date: new Date().toISOString(),
                     name: name,
                     qty: addedQty,
                     invoice: invoice,
                     source: source
-                });
+                };
+                if (!AppState.newProductsReport) AppState.newProductsReport = [];
+                AppState.newProductsReport.push(addedReportEntry);
             }
         }
     } else {
@@ -3228,14 +3444,15 @@ function handleSaveProduct(e) {
             dup.source = source;
             
             if (addedQty > 0) {
-                if (!AppState.newProductsReport) AppState.newProductsReport = [];
-                AppState.newProductsReport.push({
+                addedReportEntry = {
                     date: new Date().toISOString(),
                     name: name,
                     qty: addedQty,
                     invoice: invoice,
                     source: source
-                });
+                };
+                if (!AppState.newProductsReport) AppState.newProductsReport = [];
+                AppState.newProductsReport.push(addedReportEntry);
             }
         } else {
             finalQty = qty;
@@ -3247,14 +3464,15 @@ function handleSaveProduct(e) {
             AppState.products.push(newProduct);
             
             if (addedQty > 0) {
-                if (!AppState.newProductsReport) AppState.newProductsReport = [];
-                AppState.newProductsReport.push({
+                addedReportEntry = {
                     date: new Date().toISOString(),
                     name: name,
                     qty: addedQty,
                     invoice: invoice,
                     source: source
-                });
+                };
+                if (!AppState.newProductsReport) AppState.newProductsReport = [];
+                AppState.newProductsReport.push(addedReportEntry);
             }
         }
     }
@@ -3263,6 +3481,12 @@ function handleSaveProduct(e) {
     
     // Sync all inventory to Google Sheets/Firebase
     SyncManager.dispatchSync("products", AppState.products, "inventory_master");
+    
+    // Sync product addition report log entry if added
+    if (addedReportEntry) {
+        const docId = "NP-" + new Date(addedReportEntry.date).getTime();
+        SyncManager.dispatchSync("new_products", addedReportEntry, docId);
+    }
     
     closeProductModal();
     playBeep('success');
@@ -3465,8 +3689,8 @@ function deleteTransaction(txId) {
                 }
             });
         }
-        // Update Sheets with restocked products
-        SyncManager.syncToSheets("products", AppState.products);
+        // Update Sheets and Firestore with restocked products
+        SyncManager.dispatchSync("products", AppState.products, "inventory_master");
     } else if (tx.type === 'salary') {
         // Remove withdrawal log from employee file
         const emp = AppState.employees.find(emp => emp.id === tx.employeeId);
@@ -3560,8 +3784,8 @@ function handleSaveEditEmployee(e) {
     
     AppState.saveAll();
     
-    // Sync to Sheets
-    SyncManager.syncToSheets("salaries_employees_master", AppState.employees);
+    // Sync to Cloud
+    SyncManager.dispatchSync("employees", AppState.employees, "employees_master");
     
     // Refresh interfaces
     renderSettingsEmployeesList();
@@ -3607,6 +3831,94 @@ function loadSettingsUI() {
     
     renderSettingsUsersList();
     renderSettingsEmployeesList();
+    renderSettingsDiscountsList();
+}
+
+// --- CASHIER DISCOUNT RULES MANAGEMENT ---
+function renderSettingsDiscountsList() {
+    const listBody = document.getElementById('settings-discounts-list');
+    if (!listBody) return;
+    
+    listBody.innerHTML = '';
+    const rules = AppState.settings.cashierDiscounts || [];
+    
+    if (rules.length === 0) {
+        listBody.innerHTML = `<tr><td colspan="4" class="text-center" style="color:var(--text-muted); padding:20px;">لا توجد قواعد خصم مخصصة.</td></tr>`;
+        return;
+    }
+    
+    const sortedRules = [...rules].sort((a, b) => b.from - a.from);
+    
+    sortedRules.forEach(rule => {
+        listBody.innerHTML += `
+            <tr>
+                <td style="font-family:'Inter'; font-weight:700;">${rule.from.toLocaleString()} د.ع</td>
+                <td style="font-family:'Inter'; font-weight:700;">${rule.to.toLocaleString()} د.ع</td>
+                <td style="font-family:'Inter'; font-weight:800; color:var(--primary);">${rule.maxDiscount.toLocaleString()} د.ع</td>
+                <td>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteDiscountRule(${rule.from}, ${rule.to})">
+                        <i class="fa-solid fa-trash-can"></i> حذف
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function addNewDiscountRule(e) {
+    if (e) e.preventDefault();
+    
+    const fromVal = parseInt(document.getElementById('new-disc-from').value) || 0;
+    const toVal = parseInt(document.getElementById('new-disc-to').value) || 0;
+    const maxVal = parseInt(document.getElementById('new-disc-max').value) || 0;
+    
+    if (fromVal < 0 || toVal <= fromVal || maxVal < 0) {
+        alert("يرجى إدخال قيم صحيحة وموجبة! يجب أن يكون الحد الأقصى للنطاق أكبر من الحد الأدنى.");
+        return;
+    }
+    
+    if (!AppState.settings.cashierDiscounts) {
+        AppState.settings.cashierDiscounts = [];
+    }
+    
+    const dup = AppState.settings.cashierDiscounts.find(r => r.from === fromVal && r.to === toVal);
+    if (dup) {
+        alert("تنبيه: توجد قاعدة خصم مسجلة بالفعل بنفس هذا النطاق السعري بالضبط!");
+        return;
+    }
+    
+    AppState.settings.cashierDiscounts.push({
+        from: fromVal,
+        to: toVal,
+        maxDiscount: maxVal
+    });
+    
+    AppState.saveAll();
+    
+    SyncManager.dispatchSync("settings", AppState.settings, "settings_config");
+    
+    document.getElementById('new-disc-from').value = '';
+    document.getElementById('new-disc-to').value = '';
+    document.getElementById('new-disc-max').value = '';
+    
+    renderSettingsDiscountsList();
+    playBeep('success');
+    alert("تم إضافة قاعدة الخصم الجديدة وحفظ الإعدادات سحابياً بنجاح.");
+}
+
+function deleteDiscountRule(from, to) {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف قاعدة الخصم هذه؟")) return;
+    
+    AppState.settings.cashierDiscounts = (AppState.settings.cashierDiscounts || []).filter(
+        rule => !(rule.from === from && rule.to === to)
+    );
+    
+    AppState.saveAll();
+    
+    SyncManager.dispatchSync("settings", AppState.settings, "settings_config");
+    
+    renderSettingsDiscountsList();
+    playBeep('success');
 }
 
 function saveSystemConfigurations(e) {
@@ -3954,10 +4266,17 @@ function toggleEditUserPermissions() {
 }
 
 function getMaxAllowedDiscount(unitPrice) {
-    if (unitPrice >= 60000) return 15000;
-    if (unitPrice >= 35000) return 10000;
-    if (unitPrice >= 22000) return 5000;
-    if (unitPrice >= 10000) return 2000;
+    const rules = AppState.settings.cashierDiscounts || [
+        { from: 60000, to: 99999999, maxDiscount: 15000 },
+        { from: 35000, to: 59999, maxDiscount: 10000 },
+        { from: 22000, to: 34999, maxDiscount: 5000 },
+        { from: 10000, to: 21999, maxDiscount: 2000 }
+    ];
+    for (const rule of rules) {
+        if (unitPrice >= rule.from && unitPrice <= rule.to) {
+            return rule.maxDiscount;
+        }
+    }
     return 0;
 }
 
@@ -4180,6 +4499,7 @@ async function checkSession() {
     // Setup listeners
     setupBarcodeListener();
     initProductAutocomplete();
+    initModalProductAutocomplete();
     
     const outInput = document.getElementById('salary-amount-out');
     const inInput = document.getElementById('salary-amount-in');
@@ -4294,11 +4614,21 @@ function processDailyResetAndArchive(dateStrOverride = null, auto = false) {
     
     if (dayTransactions.length === 0 && auto) return; // Nothing to archive
     
-    let totalSales = 0;
+    let totalSales = 0; // Cash sales only
     let totalExpenses = 0;
+    let totalDebtPayments = 0;
     dayTransactions.forEach(t => {
-        if (t.type === 'sale') totalSales += t.total;
-        else if (t.type === 'expense' || t.type === 'salary') totalExpenses += t.amount;
+        if (t.type === 'sale') {
+            if (t.paymentType !== 'credit') {
+                totalSales += t.total;
+            }
+        } else if (t.type === 'debt_payment') {
+            totalDebtPayments += t.amount;
+        } else if (t.type === 'salary' && t.direction === 'in') {
+            totalSales += t.amount;
+        } else if (t.type === 'expense' || t.type === 'salary') {
+            totalExpenses += t.amount;
+        }
     });
     
     const archiveObj = {
@@ -4306,7 +4636,8 @@ function processDailyResetAndArchive(dateStrOverride = null, auto = false) {
         dateStr: targetDateStr,
         totalSales: totalSales,
         totalExpenses: totalExpenses,
-        netProfit: totalSales - totalExpenses,
+        totalDebtPayments: totalDebtPayments,
+        netProfit: totalSales + totalDebtPayments - totalExpenses,
         timestamp: new Date().toISOString()
     };
     
@@ -4678,7 +5009,7 @@ function handleReplaceProduct(e) {
     
     // Sync to Cloud
     SyncManager.dispatchSync("sales", transaction, transaction.id);
-    SyncManager.syncToSheets("products", AppState.products);
+    SyncManager.dispatchSync("products", AppState.products, "inventory_master");
     
     playBeep('checkout');
     alert(`تمت عملية الاستبدال بنجاح!\nالفرق المالي: ${diff.toLocaleString()} د.ع`);
