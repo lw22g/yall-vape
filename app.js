@@ -89,6 +89,9 @@ const AppState = {
         this.newProductsReport = [];
         this.debts = [];
         this.needsReconciliation = false;
+        this.supplyInvoices = [];
+        this.inventoryAudits = [];
+        this.supplierDebts = {};
         
         this.settings.cashierDiscounts = [
             { from: 60000, to: 99999999, maxDiscount: 15000 },
@@ -114,6 +117,11 @@ const AppState = {
             this.newProductsReport = JSON.parse(localStorage.getItem('vape_new_products') || '[]');
             this.debts = JSON.parse(localStorage.getItem('vape_debts') || '[]');
             this.needsReconciliation = localStorage.getItem('vape_needs_reconciliation') === 'true';
+            
+            // New entities
+            this.supplyInvoices = JSON.parse(localStorage.getItem('vape_supply_invoices') || '[]');
+            this.inventoryAudits = JSON.parse(localStorage.getItem('vape_inventory_audits') || '[]');
+            this.supplierDebts = JSON.parse(localStorage.getItem('vape_supplier_debts') || '{}');
             
             const savedSettings = localStorage.getItem('vape_settings');
             if (savedSettings) {
@@ -157,6 +165,11 @@ const AppState = {
         localStorage.setItem('vape_debts', JSON.stringify(this.debts || []));
         localStorage.setItem('vape_settings', JSON.stringify(this.settings));
         localStorage.setItem('vape_needs_reconciliation', this.needsReconciliation ? 'true' : 'false');
+        
+        // New entities
+        localStorage.setItem('vape_supply_invoices', JSON.stringify(this.supplyInvoices || []));
+        localStorage.setItem('vape_inventory_audits', JSON.stringify(this.inventoryAudits || []));
+        localStorage.setItem('vape_supplier_debts', JSON.stringify(this.supplierDebts || {}));
     }
 };
 
@@ -642,6 +655,10 @@ function switchTab(tabId) {
                 titleHtml = '<span><i class="fa-solid fa-boxes-stacked"></i> المستودع والمخزن</span>';
                 descText = 'إدارة المنتجات، الأسعار، والمخزون';
                 break;
+            case 'inventory-audit':
+                titleHtml = '<span><i class="fa-solid fa-list-check"></i> جرد ومطابقة المخزن</span>';
+                descText = 'مطابقة كميات المخازن وتوليد تقارير المطابقة والعجز';
+                break;
             case 'settings':
                 titleHtml = '<span><i class="fa-solid fa-sliders"></i> إعدادات الاتصال</span>';
                 descText = 'تكوين ربط قاعدة البيانات السحابية';
@@ -666,6 +683,8 @@ function switchTab(tabId) {
         calculateTreasuryReconciliation();
     } else if (tabId === 'inventory') {
         renderInventoryTable();
+    } else if (tabId === 'inventory-audit') {
+        renderInventoryAuditTable();
     } else if (tabId === 'new-products-report') {
         renderNewProductsReport();
     } else if (tabId === 'expenses') {
@@ -830,6 +849,13 @@ function updateBasketItemDiscount(index, val) {
             alert(`خطأ: تجاوز الحد المسموح لخصم الكاشير على هذا الصنف!\nالحد الأقصى للقطعة الواحدة: ${maxUnitDiscount.toLocaleString()} د.ع.\nإجمالي الحد الأقصى للكمية (${item.quantity}): ${maxLineDiscount.toLocaleString()} د.ع.`);
             discount = maxLineDiscount;
         }
+    }
+    
+    // Check Manager pricing boundary (selling price cannot be less than cost price)
+    const maxLossDiscount = (item.product.price - item.product.cost) * item.quantity;
+    if (discount > maxLossDiscount) {
+        alert(`خطأ: لا يمكن البيع بأقل من سعر الشراء (سعر التكلفة)!\nسعر الشراء للقطعة: ${item.product.cost.toLocaleString()} د.ع.\nالحد الأقصى للخصم المسموح لهذه الكمية هو: ${Math.max(0, maxLossDiscount).toLocaleString()} د.ع.`);
+        discount = Math.max(0, maxLossDiscount);
     }
     
     if (discount > itemTotal) {
@@ -1005,6 +1031,19 @@ function processCheckout() {
     
     if (discountVal > subtotal) {
         alert("خطأ: قيمة الخصم أعلى من إجمالي الفاتورة!");
+        return;
+    }
+    
+    // Check total invoice cost bound (selling price cannot be less than total purchase cost)
+    let totalCost = 0;
+    let basketTotal = 0;
+    AppState.basket.forEach(item => {
+        totalCost += item.product.cost * item.quantity;
+        basketTotal += Math.max(0, (item.product.price * item.quantity) - (item.discount || 0));
+    });
+    
+    if (discountVal > (basketTotal - totalCost)) {
+        alert(`خطأ: قيمة خصم الفاتورة الإجمالي تجعل السعر النهائي أقل من سعر تكلفة المواد!\nالحد الأقصى المسموح للخصم الإضافي هو: ${Math.max(0, basketTotal - totalCost).toLocaleString()} د.ع.`);
         return;
     }
     
@@ -1979,6 +2018,16 @@ function renderReportsDashboard() {
         todayNetLabel.innerText = `${netProfit.toLocaleString()} د.ع`;
         todayNetLabel.style.color = netProfit >= 0 ? 'var(--primary)' : 'var(--danger)';
     }
+    
+    const todayDebtsLabel = document.getElementById('report-today-debts');
+    if (todayDebtsLabel) {
+        if (creditSales > 0 || totalDebtRepayments > 0) {
+            todayDebtsLabel.innerHTML = `<span style="font-size:15px; color:var(--danger); font-weight:800;">-${creditSales.toLocaleString()} د.ع</span><br><small style="font-size:10px; color:#10b981; font-weight:normal;">التحصيل: +${totalDebtRepayments.toLocaleString()} د.ع</small>`;
+        } else {
+            todayDebtsLabel.innerText = `0 د.ع`;
+        }
+    }
+    
     if (todayExpectedLabel) todayExpectedLabel.innerText = `${systemExpected.toLocaleString()} د.ع`;
     
     // 2. Render daily transactions ledger
@@ -2924,7 +2973,10 @@ function populateMonthlyReportSelect() {
     
     if (currentSelection && sortedMonths.includes(currentSelection)) {
         select.value = currentSelection;
+    } else {
+        select.value = currentMonthKey;
     }
+    renderMonthlyBreakdownDetails();
 }
 
 function renderMonthlyBreakdownDetails() {
@@ -2949,6 +3001,8 @@ function renderMonthlyBreakdownDetails() {
     const today = new Date();
     const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     
+    let monthlyCogsProfit = 0;
+    
     AppState.transactions.forEach(t => {
         const dateObj = new Date(t.timestamp || Date.now());
         const mKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
@@ -2960,6 +3014,8 @@ function renderMonthlyBreakdownDetails() {
                 } else {
                     totalSales += t.total;
                 }
+                
+                let invoiceCogs = 0;
                 t.items.forEach(it => {
                     let source = it.source || "غير محدد";
                     let cost = it.cost || 0;
@@ -2976,20 +3032,26 @@ function renderMonthlyBreakdownDetails() {
                         pName = pName.replace(" (مرتجع استبدال)", "").replace(" (بديل استبدال)", "");
                     }
                     
+                    invoiceCogs += (cost * it.quantity);
+                    
                     if (!productSalesMap[it.id]) {
-                        productSalesMap[it.id] = { name: pName, quantity: 0, totalPrice: 0 };
+                        productSalesMap[it.id] = { name: pName, quantity: 0, totalPrice: 0, cost: cost, totalCost: 0 };
                     }
                     productSalesMap[it.id].quantity += it.quantity;
-                    productSalesMap[it.id].totalPrice += it.price * it.quantity;
+                    const itemTotal = (it.price * it.quantity) - (it.discount || 0);
+                    productSalesMap[it.id].totalPrice += itemTotal;
+                    productSalesMap[it.id].totalCost += cost * it.quantity;
                     
                     if (!sourceSalesMap[source]) {
                         sourceSalesMap[source] = { quantity: 0, totalSales: 0, totalCost: 0, netProfit: 0 };
                     }
                     sourceSalesMap[source].quantity += it.quantity;
-                    sourceSalesMap[source].totalSales += (it.price * it.quantity);
+                    sourceSalesMap[source].totalSales += itemTotal;
                     sourceSalesMap[source].totalCost += (cost * it.quantity);
-                    sourceSalesMap[source].netProfit += ((it.price - cost) * it.quantity);
+                    sourceSalesMap[source].netProfit += (itemTotal - (cost * it.quantity));
                 });
+                
+                monthlyCogsProfit += (t.total - invoiceCogs);
             } else if (t.type === 'debt_payment') {
                 totalDebtPayments += t.amount;
             } else if (t.type === 'expense') {
@@ -3015,6 +3077,13 @@ function renderMonthlyBreakdownDetails() {
     document.getElementById('month-total-expenses').innerText = `${totalExpenses.toLocaleString()} د.ع`;
     document.getElementById('month-total-salaries').innerText = `${totalSalaries.toLocaleString()} د.ع`;
     
+    // Set actual sales net profit
+    const cogsProfitLabel = document.getElementById('month-cogs-profit');
+    if (cogsProfitLabel) {
+        cogsProfitLabel.innerText = `${monthlyCogsProfit.toLocaleString()} د.ع`;
+        cogsProfitLabel.style.color = monthlyCogsProfit >= 0 ? 'var(--primary)' : 'var(--danger)';
+    }
+    
     const netProfit = totalSales + totalDebtPayments - (totalExpenses + totalSalaries);
     const netProfitLabel = document.getElementById('month-net-profit');
     netProfitLabel.innerText = `${netProfit.toLocaleString()} د.ع`;
@@ -3025,20 +3094,48 @@ function renderMonthlyBreakdownDetails() {
     
     const itemIds = Object.keys(productSalesMap).filter(id => productSalesMap[id].quantity > 0);
     if (itemIds.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" class="text-center" style="color:var(--text-muted); padding:20px;">لم يتم تسجيل مبيعات بضائع لهذا الشهر بعد.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="color:var(--text-muted); padding:20px;">لم يتم تسجيل مبيعات بضائع لهذا الشهر بعد.</td></tr>`;
     } else {
         itemIds.forEach(id => {
             const data = productSalesMap[id];
             const avgPrice = data.quantity > 0 ? Math.round(data.totalPrice / data.quantity) : 0;
+            const netProfitVal = data.totalPrice - data.totalCost;
             tbody.innerHTML += `
                 <tr>
                     <td style="font-weight:700;">${data.name}</td>
                     <td style="font-family:'Inter'; text-align: center; font-weight:700;">${data.quantity}</td>
+                    <td class="price-value" style="font-family:'Inter';">${data.cost.toLocaleString()} د.ع</td>
                     <td class="price-value" style="font-family:'Inter';">${avgPrice.toLocaleString()} د.ع</td>
                     <td class="price-value" style="font-family:'Inter'; font-weight:800; color:var(--primary);">${data.totalPrice.toLocaleString()} د.ع</td>
+                    <td class="price-value" style="font-family:'Inter'; font-weight:800; color:${netProfitVal >= 0 ? 'var(--primary)' : 'var(--danger)'};">${netProfitVal.toLocaleString()} د.ع</td>
                 </tr>
             `;
         });
+    }
+    
+    // Populate daily inspector dropdown
+    const daySelect = document.getElementById('monthly-day-select');
+    if (daySelect) {
+        daySelect.innerHTML = '<option value="">-- اختر اليوم --</option>';
+        const daysInMonth = new Set();
+        
+        AppState.transactions.forEach(t => {
+            const dateObj = new Date(t.timestamp || Date.now());
+            const mKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+            if (mKey === selectedMonth) {
+                const dayStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+                daysInMonth.add(dayStr);
+            }
+        });
+        
+        const sortedDays = Array.from(daysInMonth).sort();
+        sortedDays.forEach(dayStr => {
+            const dateParts = dayStr.split('-');
+            const dayNum = dateParts[2];
+            daySelect.innerHTML += `<option value="${dayStr}">يوم ${dayNum} من الشهر</option>`;
+        });
+        
+        document.getElementById('monthly-day-details').style.display = 'none';
     }
     
     const sourceBody = document.getElementById('monthly-sources-breakdown-body');
@@ -5082,11 +5179,8 @@ function selectDebtor(debtorId) {
     const debtor = AppState.debts.find(d => d.id === debtorId);
     if (!debtor) return;
     
-    const emptyPlaceholder = document.getElementById('debtor-empty-placeholder');
-    if (emptyPlaceholder) emptyPlaceholder.style.display = 'none';
-    
-    const detailPanel = document.getElementById('debtor-detail-panel');
-    if (detailPanel) detailPanel.style.display = 'block';
+    const modal = document.getElementById('debtor-detail-modal');
+    if (modal) modal.classList.add('active');
     
     document.getElementById('debtor-name-display').innerText = debtor.customerName;
     document.getElementById('debtor-balance-display').innerText = `${debtor.amount.toLocaleString()} د.ع`;
@@ -5108,11 +5202,70 @@ function selectDebtor(debtorId) {
                 const color = h.type === 'charge' ? 'var(--danger)' : 'var(--primary)';
                 const prefix = h.type === 'charge' ? '+' : '-';
                 
+                let detailsHtml = '';
+                if (h.type === 'charge') {
+                    // Try to find matching transaction to display items
+                    const tx = AppState.transactions.find(t => t.id === h.id);
+                    if (tx) {
+                        detailsHtml = `
+                        <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-main); background: rgba(255,255,255,0.01); padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); direction: rtl; text-align: right; line-height: 1.6;">
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed rgba(255,255,255,0.1); padding-bottom:5px; margin-bottom:6px; font-size:10px; color:var(--text-muted);">
+                                <span>رقم الفاتورة: <strong>${tx.id}</strong></span>
+                                <span>المنفذ: <strong>${tx.createdBy || 'غير معروف'}</strong></span>
+                            </div>
+                        `;
+                        
+                        if (tx.items && tx.items.length > 0) {
+                            detailsHtml += `<div style="font-weight:bold; margin-bottom:5px; font-size:10.5px; color:var(--accent);">تفاصيل المواد المشتراة بالدين:</div>`;
+                            tx.items.forEach(it => {
+                                const itTotal = (it.price * it.quantity) - (it.discount || 0);
+                                detailsHtml += `
+                                <div style="display:flex; justify-content:space-between; margin-bottom:3px; padding-right:5px; border-right:2px solid var(--accent); font-size:11px;">
+                                    <span>• ${it.name} (x${it.quantity})</span>
+                                    <span style="font-family:'Inter'; font-weight:700;">${itTotal.toLocaleString()} د.ع</span>
+                                </div>`;
+                            });
+                        }
+                        
+                        const subtotalVal = tx.subtotal || tx.total;
+                        const discountVal = tx.discount || 0;
+                        detailsHtml += `
+                            <div style="border-top:1px dashed rgba(255,255,255,0.1); padding-top:5px; margin-top:6px; font-size:10.5px; color:var(--text-muted); display:flex; flex-direction:column; gap:2.5px;">
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span>مجموع المواد الفعلي:</span>
+                                    <span style="font-family:'Inter';">${subtotalVal.toLocaleString()} د.ع</span>
+                                </div>
+                                ${discountVal > 0 ? `
+                                <div style="display:flex; justify-content:space-between; color:var(--danger);">
+                                    <span>خصم الفاتورة الإجمالي:</span>
+                                    <span style="font-family:'Inter';">-${discountVal.toLocaleString()} د.ع</span>
+                                </div>` : ''}
+                                <div style="display:flex; justify-content:space-between; font-weight:bold; color:var(--danger); font-size:11.5px; margin-top:3px; border-top:1px solid rgba(255,255,255,0.05); padding-top:3px;">
+                                    <span>إجمالي الدين الفعلي المقيد:</span>
+                                    <span style="font-family:'Inter';">${tx.total.toLocaleString()} د.ع</span>
+                                </div>
+                            </div>
+                        `;
+                        
+                        if (tx.isDelivery && tx.deliveryDetails) {
+                            detailsHtml += `
+                            <div style="margin-top:6px; font-size:10px; color:var(--text-muted); background:rgba(0,0,0,0.15); padding:6px; border-radius:5px; border:1px solid rgba(255,255,255,0.03);">
+                                <strong>توصيل ديليفري:</strong> ${tx.deliveryDetails.name} - ${tx.deliveryDetails.phone} (${tx.deliveryDetails.location})
+                            </div>`;
+                        }
+                        
+                        detailsHtml += `</div>`;
+                    }
+                }
+                
                 historyBody.innerHTML += `
                     <tr>
                         <td>${dt}</td>
-                        <td>${h.description || typeText}</td>
-                        <td class="price-value" style="color:${color}; font-weight:700;">${prefix}${h.amount.toLocaleString()} د.ع</td>
+                        <td>
+                            <div>${h.description || typeText}</div>
+                            ${detailsHtml}
+                        </td>
+                        <td class="price-value" style="color:${color}; font-weight:700; text-align: left;">${prefix}${h.amount.toLocaleString()} د.ع</td>
                     </tr>
                 `;
             });
@@ -5183,6 +5336,981 @@ function handleRepayDebt(e) {
     // Refresh UI
     renderDebtsList();
     selectDebtor(debtorId);
+}
+
+// ==========================================
+// --- NEW BATCH SUPPLY INVOICE FEATURES ---
+// ==========================================
+let currentSupplyInvoice = {
+    supplier: '',
+    invoiceNumber: '',
+    paymentStatus: 'paid',
+    paidAmount: 0,
+    items: []
+};
+
+function openSupplyInvoiceModal() {
+    if (AppState.currentUser && AppState.currentUser.role !== 'manager') {
+        alert("غير مصرح لك بتوريد المنتجات.");
+        return;
+    }
+    
+    currentSupplyInvoice = {
+        supplier: '',
+        invoiceNumber: '',
+        paymentStatus: 'paid',
+        paidAmount: 0,
+        items: []
+    };
+    
+    document.getElementById('supply-supplier').value = '';
+    document.getElementById('supply-invoice-num').value = '';
+    document.getElementById('supply-payment-status').value = 'paid';
+    document.getElementById('supply-paid-amount').value = 0;
+    
+    document.getElementById('item-barcode').value = '';
+    document.getElementById('item-name').value = '';
+    document.getElementById('item-cost-usd').value = '';
+    document.getElementById('item-cost-iqd').value = '';
+    document.getElementById('item-price').value = '';
+    document.getElementById('item-qty').value = '';
+    
+    toggleSupplyPaymentFields();
+    renderSupplyInvoiceTmpItems();
+    
+    document.getElementById('supply-invoice-modal').classList.add('active');
+}
+
+function closeSupplyInvoiceModal() {
+    document.getElementById('supply-invoice-modal').classList.remove('active');
+}
+
+function toggleSupplyPaymentFields() {
+    const status = document.getElementById('supply-payment-status').value;
+    const paidGroup = document.getElementById('supply-paid-amount-group');
+    if (status === 'credit') {
+        paidGroup.style.display = 'block';
+    } else {
+        paidGroup.style.display = 'none';
+        document.getElementById('supply-paid-amount').value = 0;
+    }
+}
+
+function checkSupplyBarcode(barcode) {
+    const cleanBarcode = barcode.trim();
+    if (!cleanBarcode) return;
+    
+    const prod = AppState.products.find(p => p.barcode === cleanBarcode);
+    if (prod) {
+        document.getElementById('item-name').value = prod.name;
+        document.getElementById('item-cost-iqd').value = prod.cost;
+        document.getElementById('item-price').value = prod.price;
+        const usdRate = AppState.settings.usdExchangeRate || 1500;
+        document.getElementById('item-cost-usd').value = (prod.cost / usdRate).toFixed(2);
+    }
+}
+
+function convertUsdToIqdSupplyCost() {
+    const usdVal = parseFloat(document.getElementById('item-cost-usd').value) || 0;
+    const usdRate = AppState.settings.usdExchangeRate || 1500;
+    if (usdVal > 0) {
+        document.getElementById('item-cost-iqd').value = Math.round(usdVal * usdRate);
+    }
+}
+
+function addTmpItemToSupplyInvoice() {
+    const barcode = document.getElementById('item-barcode').value.trim();
+    const name = document.getElementById('item-name').value.trim();
+    const cost = parseInt(document.getElementById('item-cost-iqd').value) || 0;
+    const price = parseInt(document.getElementById('item-price').value) || 0;
+    const qty = parseInt(document.getElementById('item-qty').value) || 0;
+    const costUsd = parseFloat(document.getElementById('item-cost-usd').value) || 0;
+    
+    if (!barcode || !name || cost <= 0 || price <= 0 || qty <= 0) {
+        alert("يرجى إدخال كافة الحقول بشكل صحيح وقيم موجبة للمادة!");
+        return;
+    }
+    
+    // Check if item already exists in tmp list
+    const existingIdx = currentSupplyInvoice.items.findIndex(it => it.barcode === barcode);
+    if (existingIdx > -1) {
+        currentSupplyInvoice.items[existingIdx].quantity += qty;
+        currentSupplyInvoice.items[existingIdx].cost = cost;
+        currentSupplyInvoice.items[existingIdx].price = price;
+        currentSupplyInvoice.items[existingIdx].costUsd = costUsd;
+    } else {
+        currentSupplyInvoice.items.push({ barcode, name, cost, price, quantity: qty, costUsd });
+    }
+    
+    // Clear item fields
+    document.getElementById('item-barcode').value = '';
+    document.getElementById('item-name').value = '';
+    document.getElementById('item-cost-usd').value = '';
+    document.getElementById('item-cost-iqd').value = '';
+    document.getElementById('item-price').value = '';
+    document.getElementById('item-qty').value = '';
+    
+    renderSupplyInvoiceTmpItems();
+}
+
+function renderSupplyInvoiceTmpItems() {
+    const tbody = document.getElementById('supply-invoice-tmp-items');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    let totalInvoiceCost = 0;
+    
+    currentSupplyInvoice.items.forEach((it, index) => {
+        const itemTotal = it.cost * it.quantity;
+        totalInvoiceCost += itemTotal;
+        
+        tbody.innerHTML += `
+            <tr>
+                <td>${it.barcode}</td>
+                <td><strong>${it.name}</strong></td>
+                <td>${it.cost.toLocaleString()} د.ع</td>
+                <td>${it.price.toLocaleString()} د.ع</td>
+                <td>${it.quantity}</td>
+                <td>${itemTotal.toLocaleString()} د.ع</td>
+                <td>
+                    <button type="button" class="delete-btn" onclick="removeTmpItemFromSupplyInvoice(${index})"><i class="fa-regular fa-trash-can"></i></button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    document.getElementById('supply-invoice-total-cost').innerText = `${totalInvoiceCost.toLocaleString()} د.ع`;
+}
+
+function removeTmpItemFromSupplyInvoice(index) {
+    currentSupplyInvoice.items.splice(index, 1);
+    renderSupplyInvoiceTmpItems();
+}
+
+function handleSaveSupplyInvoice(e) {
+    if (e) e.preventDefault();
+    
+    const supplierName = document.getElementById('supply-supplier').value.trim();
+    const invoiceNum = document.getElementById('supply-invoice-num').value.trim();
+    const paymentStatus = document.getElementById('supply-payment-status').value;
+    const paidAmount = parseInt(document.getElementById('supply-paid-amount').value) || 0;
+    
+    if (!supplierName || !invoiceNum) {
+        alert("يرجى إدخال اسم المورد ورقم الفاتورة!");
+        return;
+    }
+    
+    if (currentSupplyInvoice.items.length === 0) {
+        alert("يرجى إضافة مادة واحدة على الأقل لقائمة التوريد!");
+        return;
+    }
+    
+    let totalInvoiceCost = 0;
+    currentSupplyInvoice.items.forEach(it => {
+        totalInvoiceCost += it.cost * it.quantity;
+    });
+    
+    // Supplier debt calculations
+    let remainingDebt = 0;
+    if (paymentStatus === 'credit') {
+        remainingDebt = Math.max(0, totalInvoiceCost - paidAmount);
+    }
+    
+    // Save invoice to list
+    const supplyInvoiceRecord = {
+        id: "SUP-" + Date.now().toString().slice(-8),
+        date: new Date().toISOString(),
+        supplier: supplierName,
+        invoiceNumber: invoiceNum,
+        paymentStatus,
+        totalCost: totalInvoiceCost,
+        paidAmount: paymentStatus === 'paid' ? totalInvoiceCost : paidAmount,
+        remainingDebt,
+        items: currentSupplyInvoice.items
+    };
+    
+    if (!AppState.supplyInvoices) AppState.supplyInvoices = [];
+    AppState.supplyInvoices.push(supplyInvoiceRecord);
+    
+    // Update supplier outstanding debt
+    if (!AppState.supplierDebts) AppState.supplierDebts = {};
+    if (remainingDebt > 0) {
+        if (!AppState.supplierDebts[supplierName]) {
+            AppState.supplierDebts[supplierName] = 0;
+        }
+        AppState.supplierDebts[supplierName] += remainingDebt;
+    }
+    
+    // Process products insertion/update in inventory
+    currentSupplyInvoice.items.forEach(it => {
+        const dup = AppState.products.find(p => p.barcode === it.barcode);
+        let finalQty = it.quantity;
+        
+        if (dup) {
+            finalQty = dup.qty + it.quantity;
+            dup.cost = it.cost;
+            dup.costUsd = it.costUsd || dup.costUsd;
+            dup.price = it.price;
+            dup.qty = finalQty;
+            dup.source = supplierName;
+        } else {
+            const newProduct = {
+                id: "p_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+                barcode: it.barcode,
+                name: it.name,
+                cost: it.cost,
+                costUsd: it.costUsd,
+                price: it.price,
+                qty: finalQty,
+                source: supplierName
+            };
+            AppState.products.push(newProduct);
+        }
+        
+        // Log in newProductsReport (for backwards compatibility/Sheets API)
+        const addedReportEntry = {
+            date: new Date().toISOString(),
+            name: it.name,
+            qty: it.quantity,
+            invoice: invoiceNum,
+            source: supplierName
+        };
+        if (!AppState.newProductsReport) AppState.newProductsReport = [];
+        AppState.newProductsReport.push(addedReportEntry);
+        
+        const docId = "NP-" + new Date(addedReportEntry.date).getTime() + "_" + Math.floor(Math.random() * 100);
+        SyncManager.dispatchSync("new_products", addedReportEntry, docId);
+    });
+    
+    // Save state
+    AppState.saveAll();
+    
+    // Sync all master databases to Cloud
+    SyncManager.dispatchSync("products", AppState.products, "inventory_master");
+    
+    closeSupplyInvoiceModal();
+    playBeep('success');
+    renderInventoryTable();
+    renderNewProductsReport();
+    
+    alert(`تم حفظ قائمة التوريد بنجاح! وتحديث المخازن بقيمة إجمالية ${totalInvoiceCost.toLocaleString()} د.ع.`);
+}
+
+// Sub-tabs navigation inside the New Products Report
+let currentSupplySubTab = 'invoices';
+function switchSupplyReportSubTab(tabId) {
+    currentSupplySubTab = tabId;
+    document.querySelectorAll('#new-products-report-panel .sub-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    const idsMap = {
+        'invoices': 'subtab-supply-invoices-btn',
+        'items': 'subtab-supply-items-btn',
+        'suppliers': 'subtab-suppliers-debts-btn'
+    };
+    
+    const activeBtn = document.getElementById(idsMap[tabId]);
+    if (activeBtn) activeBtn.classList.add('active');
+    
+    document.getElementById('supply-invoices-subpanel').style.display = tabId === 'invoices' ? 'block' : 'none';
+    document.getElementById('supply-items-subpanel').style.display = tabId === 'items' ? 'block' : 'none';
+    document.getElementById('suppliers-debts-subpanel').style.display = tabId === 'suppliers' ? 'block' : 'none';
+    
+    renderNewProductsReport();
+}
+
+function renderNewProductsReport(filterText = '') {
+    const tbodyInvoices = document.getElementById('supply-invoices-report-body');
+    const tbodyItems = document.getElementById('new-products-report-body');
+    const tbodySuppliers = document.getElementById('suppliers-debts-report-body');
+    
+    if (currentSupplySubTab === 'invoices' && tbodyInvoices) {
+        tbodyInvoices.innerHTML = '';
+        const list = AppState.supplyInvoices || [];
+        
+        if (list.length === 0) {
+            tbodyInvoices.innerHTML = `<tr><td colspan="8" class="text-center" style="color:var(--text-muted); padding:30px;">لا توجد قوائم توريد مسجلة.</td></tr>`;
+            return;
+        }
+        
+        // Sort descending
+        const sorted = [...list].sort((a, b) => new Date(b.date) - new Date(a.date));
+        sorted.forEach(inv => {
+            const dt = new Date(inv.date).toLocaleString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const pmtText = inv.paymentStatus === 'paid' ? '<span class="badge success">مدفوع بالكامل</span>' : '<span class="badge danger">آجل (ذمم دائنة)</span>';
+            const itemsTooltip = inv.items.map(it => `• ${it.name} (x${it.quantity})`).join('\\n');
+            
+            tbodyInvoices.innerHTML += `
+                <tr>
+                    <td>${dt}</td>
+                    <td><strong>${inv.supplier}</strong></td>
+                    <td style="font-family:'Inter';">${inv.invoiceNumber}</td>
+                    <td class="price-value" style="font-weight:700;">${inv.totalCost.toLocaleString()} د.ع</td>
+                    <td>${pmtText}</td>
+                    <td class="price-value">${inv.paidAmount.toLocaleString()} د.ع</td>
+                    <td class="price-value" style="color:var(--danger); font-weight:700;">${inv.remainingDebt.toLocaleString()} د.ع</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm" onclick="alert(\`${itemsTooltip}\`)">المواد (${inv.items.length})</button>
+                    </td>
+                </tr>
+            `;
+        });
+    } else if (currentSupplySubTab === 'items' && tbodyItems) {
+        tbodyItems.innerHTML = '';
+        let reports = AppState.newProductsReport || [];
+        
+        const searchInput = document.getElementById('new-products-search');
+        const filter = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        
+        if (filter) {
+            reports = reports.filter(r => 
+                (r.name && r.name.toLowerCase().includes(filter)) ||
+                (r.invoice && r.invoice.toLowerCase().includes(filter)) ||
+                (r.source && r.source.toLowerCase().includes(filter))
+            );
+        }
+        
+        reports.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        if (reports.length === 0) {
+            tbodyItems.innerHTML = `<tr><td colspan="5" class="text-center" style="color:var(--text-muted); padding:30px;">لا توجد إضافات منتجات مطابقة أو مسجلة.</td></tr>`;
+            return;
+        }
+        
+        reports.forEach(r => {
+            const dt = new Date(r.date).toLocaleString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            tbodyItems.innerHTML += `
+                <tr>
+                    <td>${dt}</td>
+                    <td style="font-weight: bold;">${r.name}</td>
+                    <td>${r.qty}</td>
+                    <td style="font-family:'Inter';">${r.invoice || '-'}</td>
+                    <td>${r.source || '-'}</td>
+                </tr>
+            `;
+        });
+    } else if (currentSupplySubTab === 'suppliers' && tbodySuppliers) {
+        tbodySuppliers.innerHTML = '';
+        const debts = AppState.supplierDebts || {};
+        const suppliers = Object.keys(debts).filter(name => debts[name] > 0);
+        
+        if (suppliers.length === 0) {
+            tbodySuppliers.innerHTML = `<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:30px;">لا توجد ديون مستحقة للموردين.</td></tr>`;
+            return;
+        }
+        
+        suppliers.forEach(name => {
+            const amount = debts[name];
+            tbodySuppliers.innerHTML += `
+                <tr>
+                    <td><strong>${name}</strong></td>
+                    <td class="price-value" style="color:var(--danger); font-weight:800; font-size:15px;">${amount.toLocaleString()} د.ع</td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-danger btn-sm" onclick="openSupplierRepayModal('${name}', ${amount})">تسديد دفعة للمورد</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+}
+
+function filterNewProductsReport() {
+    renderNewProductsReport();
+}
+
+function openSupplierRepayModal(name, balance) {
+    document.getElementById('supplier-repay-name').value = name;
+    document.getElementById('supplier-repay-name-display').innerText = name;
+    document.getElementById('supplier-repay-balance-display').innerText = `${balance.toLocaleString()} د.ع`;
+    document.getElementById('supplier-repay-amount').value = '';
+    document.getElementById('supplier-repay-notes').value = '';
+    
+    document.getElementById('supplier-repay-modal').classList.add('active');
+}
+
+function closeSupplierRepayModal() {
+    document.getElementById('supplier-repay-modal').classList.remove('active');
+}
+
+function handlePaySupplierDebt(e) {
+    if (e) e.preventDefault();
+    
+    const name = document.getElementById('supplier-repay-name').value;
+    const amount = parseInt(document.getElementById('supplier-repay-amount').value) || 0;
+    const notes = document.getElementById('supplier-repay-notes').value.trim();
+    
+    if (!name || amount <= 0) {
+        alert("يرجى إدخال مبلغ دفع صحيح!");
+        return;
+    }
+    
+    const currentDebt = AppState.supplierDebts[name] || 0;
+    if (amount > currentDebt) {
+        alert(`خطأ: المبلغ المدفوع (${amount.toLocaleString()} د.ع) أكبر من الدين المستحق للمورد (${currentDebt.toLocaleString()} د.ع)!`);
+        return;
+    }
+    
+    // Deduct from supplier debt
+    AppState.supplierDebts[name] -= amount;
+    
+    // Record cash outflow in transactions (so expected vault balance updates)
+    const expId = "EXP-SUP-" + Date.now().toString().slice(-6);
+    const supplierPaymentExpense = {
+        id: expId,
+        type: 'expense',
+        category: 'بضاعة جديدة',
+        amount: amount,
+        description: `تسديد دفعة للمورد: ${name}` + (notes ? ` - ملاحظات: ${notes}` : ''),
+        timestamp: new Date().toISOString(),
+        createdBy: AppState.currentUser ? AppState.currentUser.name : "مدير"
+    };
+    
+    AppState.transactions.push(supplierPaymentExpense);
+    AppState.saveAll();
+    
+    // Sync payment
+    SyncManager.dispatchSync("expenses", supplierPaymentExpense, supplierPaymentExpense.id);
+    
+    closeSupplierRepayModal();
+    playBeep('success');
+    renderNewProductsReport();
+    
+    alert(`تم تسجيل دفعة تسديد للمورد ${name} بقيمة ${amount.toLocaleString()} د.ع وقيدها كمصروف في حساب الصندوق.`);
+}
+
+
+// ==========================================
+// --- INVENTORY PHYSICAL AUDIT FEATURES ---
+// ==========================================
+function renderInventoryAuditTable() {
+    const tbody = document.getElementById('audit-table-body');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    if (AppState.products.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="color:var(--text-muted); padding:30px;">لا توجد منتجات مسجلة في المخزن للجرد.</td></tr>`;
+        return;
+    }
+    
+    AppState.products.forEach(p => {
+        tbody.innerHTML += `
+            <tr id="audit-row-${p.id}">
+                <td>${p.barcode}</td>
+                <td><strong>${p.name}</strong></td>
+                <td style="font-family:'Inter'; font-weight:700; text-align:center;" id="audit-sys-${p.id}">${p.qty}</td>
+                <td style="text-align:center;">
+                    <input type="number" id="audit-qty-${p.id}" class="audit-qty-input" placeholder="0" min="0" oninput="calculateAuditLiveStats()">
+                </td>
+                <td style="font-family:'Inter'; font-weight:700; text-align:center;" id="audit-diff-${p.id}">--</td>
+                <td id="audit-status-${p.id}">--</td>
+            </tr>
+        `;
+    });
+    
+    calculateAuditLiveStats();
+    renderAuditHistory();
+}
+
+function calculateAuditLiveStats() {
+    let totalItems = AppState.products.length;
+    let matchCount = 0;
+    let deficitCount = 0;
+    let surplusCount = 0;
+    
+    AppState.products.forEach(p => {
+        const input = document.getElementById(`audit-qty-${p.id}`);
+        const sysVal = p.qty || 0;
+        const diffCell = document.getElementById(`audit-diff-${p.id}`);
+        const statusCell = document.getElementById(`audit-status-${p.id}`);
+        const row = document.getElementById(`audit-row-${p.id}`);
+        
+        if (!diffCell || !statusCell || !row) return;
+        
+        if (input && input.value !== '') {
+            const physVal = parseInt(input.value) || 0;
+            const diff = physVal - sysVal;
+            
+            diffCell.innerText = (diff > 0 ? '+' : '') + diff;
+            
+            row.className = ''; // Reset classes
+            if (diff === 0) {
+                statusCell.innerHTML = '<span class="badge success"><i class="fa-solid fa-check"></i> مطابق</span>';
+                row.classList.add('audit-match');
+                matchCount++;
+            } else if (diff < 0) {
+                statusCell.innerHTML = '<span class="badge danger"><i class="fa-solid fa-triangle-exclamation"></i> ناقص</span>';
+                row.classList.add('audit-deficit');
+                deficitCount++;
+            } else {
+                statusCell.innerHTML = '<span class="badge warning"><i class="fa-solid fa-plus"></i> زائد</span>';
+                row.classList.add('audit-surplus');
+                surplusCount++;
+            }
+        } else {
+            diffCell.innerText = '--';
+            statusCell.innerText = '--';
+            row.className = '';
+        }
+    });
+    
+    document.getElementById('audit-stat-total').innerText = totalItems;
+    document.getElementById('audit-stat-match').innerText = matchCount;
+    document.getElementById('audit-stat-short').innerText = deficitCount;
+    document.getElementById('audit-stat-surplus').innerText = surplusCount;
+}
+
+function copySystemQtyToPhysical() {
+    AppState.products.forEach(p => {
+        const input = document.getElementById(`audit-qty-${p.id}`);
+        if (input) {
+            input.value = p.qty;
+        }
+    });
+    calculateAuditLiveStats();
+}
+
+function resetAuditForm() {
+    AppState.products.forEach(p => {
+        const input = document.getElementById(`audit-qty-${p.id}`);
+        if (input) {
+            input.value = '';
+        }
+    });
+    calculateAuditLiveStats();
+}
+
+function generateAuditReport() {
+    // Verify that at least one item has been count
+    let countFilled = 0;
+    AppState.products.forEach(p => {
+        const input = document.getElementById(`audit-qty-${p.id}`);
+        if (input && input.value !== '') countFilled++;
+    });
+    
+    if (countFilled === 0) {
+        alert("يرجى إدخال الكميات الفعلية للمواد للقيام بالجرد والمطابقة!");
+        return;
+    }
+    
+    const items = [];
+    let shortageValue = 0;
+    let surplusValue = 0;
+    let matchCount = 0;
+    let deficitCount = 0;
+    let surplusCount = 0;
+    
+    AppState.products.forEach(p => {
+        const input = document.getElementById(`audit-qty-${p.id}`);
+        const physVal = input && input.value !== '' ? parseInt(input.value) : p.qty; // fallback to system qty
+        const diff = physVal - p.qty;
+        
+        if (diff === 0) matchCount++;
+        else if (diff < 0) {
+            deficitCount++;
+            shortageValue += Math.abs(diff) * p.cost;
+        } else {
+            surplusCount++;
+            surplusValue += Math.abs(diff) * p.cost;
+        }
+        
+        items.push({
+            id: p.id,
+            barcode: p.barcode,
+            name: p.name,
+            cost: p.cost,
+            systemQty: p.qty,
+            physicalQty: physVal,
+            difference: diff
+        });
+        
+        // Overwrite system qty if checked
+        if (document.getElementById('audit-reconcile-stock-qty').checked) {
+            p.qty = physVal;
+        }
+    });
+    
+    const auditRecord = {
+        id: "AUD-" + Date.now().toString().slice(-8),
+        timestamp: new Date().toISOString(),
+        auditedBy: AppState.currentUser ? AppState.currentUser.name : "مدير",
+        totalItems: items.length,
+        matchCount,
+        deficitCount,
+        surplusCount,
+        shortageValue,
+        surplusValue,
+        items
+    };
+    
+    if (!AppState.inventoryAudits) AppState.inventoryAudits = [];
+    AppState.inventoryAudits.push(auditRecord);
+    AppState.saveAll();
+    
+    // Sync updated stock to Google sheets
+    if (document.getElementById('audit-reconcile-stock-qty').checked) {
+        SyncManager.dispatchSync("products", AppState.products, "inventory_master");
+    }
+    
+    // Construct report preview HTML inside modal
+    const modalBody = document.getElementById('audit-report-printable-area');
+    if (modalBody) {
+        const dtStr = new Date(auditRecord.timestamp).toLocaleString('ar-IQ');
+        let tableRows = '';
+        
+        items.forEach(it => {
+            let statusText = '';
+            let styleColor = '';
+            
+            if (it.difference === 0) {
+                statusText = 'مطابق';
+                styleColor = 'color: #10b981;';
+            } else if (it.difference < 0) {
+                statusText = `ناقص (${it.difference})`;
+                styleColor = 'color: var(--danger); font-weight: bold;';
+            } else {
+                statusText = `زائد (+${it.difference})`;
+                styleColor = 'color: var(--primary); font-weight: bold;';
+            }
+            
+            tableRows += `
+                <tr>
+                    <td style="font-family:'Inter';">${it.barcode}</td>
+                    <td><strong>${it.name}</strong></td>
+                    <td style="text-align:center;">${it.systemQty}</td>
+                    <td style="text-align:center; font-weight:bold;">${it.physicalQty}</td>
+                    <td style="text-align:center; ${styleColor}">${it.difference === 0 ? '--' : (it.difference > 0 ? '+' : '') + it.difference}</td>
+                    <td style="${styleColor}">${statusText}</td>
+                    <td style="text-align:left;">${it.cost.toLocaleString()} د.ع</td>
+                </tr>
+            `;
+        });
+        
+        modalBody.innerHTML = `
+            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 20px;">
+                <h2 style="margin: 0; color:#000;">تقرير جرد ومطابقة المخزن الفعلي - يلا فيب</h2>
+                <p style="margin: 5px 0 0 0; font-size:12px; color:#555;">الرقم التعريفي: ${auditRecord.id} | التاريخ والوقت: ${dtStr}</p>
+                <p style="margin: 5px 0 0 0; font-size:12px; color:#555;">مسؤول الجرد: ${auditRecord.auditedBy} | حالة مطابقة السيستم: ${document.getElementById('audit-reconcile-stock-qty').checked ? 'تم التسوية والتحديث' : 'لم يتم تحديث كميات السيستم'}</p>
+            </div>
+            
+            <!-- Summary blocks -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; text-align: center;">
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px;">
+                    <span style="font-size: 11px; color: #555;">إجمالي المواد</span><br>
+                    <strong style="font-size:16px;">${auditRecord.totalItems}</strong>
+                </div>
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px; background:#f0fdf4;">
+                    <span style="font-size: 11px; color: #166534;">المطابقة</span><br>
+                    <strong style="font-size:16px; color:#166534;">${auditRecord.matchCount}</strong>
+                </div>
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px; background:#fef2f2;">
+                    <span style="font-size: 11px; color: #991b1b;">الناقصة</span><br>
+                    <strong style="font-size:16px; color:#991b1b;">${auditRecord.deficitCount}</strong>
+                </div>
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px; background:#eff6ff;">
+                    <span style="font-size: 11px; color: #1e40af;">الزائدة</span><br>
+                    <strong style="font-size:16px; color:#1e40af;">${auditRecord.surplusCount}</strong>
+                </div>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; margin-bottom:20px; font-size: 13px; border:1px solid #ccc; padding:10px; border-radius:8px; background:#fafafa;">
+                <span>إجمالي القيمة التقديرية للعجز (الناقص): <strong>${auditRecord.shortageValue.toLocaleString()} د.ع</strong></span>
+                <span>إجمالي القيمة التقديرية للوفرة (الزائد): <strong>${auditRecord.surplusValue.toLocaleString()} د.ع</strong></span>
+            </div>
+            
+            <table class="print-table" style="width: 100%; border-collapse: collapse; margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th style="border:1px solid #000; padding:8px;">باركود</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:right;">اسم المنتج</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:center;">النظام</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:center;">الفعلي</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:center;">الفارق</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:right;">الحالة</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:left;">سعر التكلفة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        `;
+        
+        document.getElementById('audit-report-modal').classList.add('active');
+    }
+    
+    // Refresh tables
+    renderInventoryAuditTable();
+    renderInventoryTable();
+}
+
+function renderAuditHistory() {
+    const tbody = document.getElementById('audit-history-tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    const audits = AppState.inventoryAudits || [];
+    
+    if (audits.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="color:var(--text-muted); padding:20px;">لا توجد تقارير جرد مؤرشفة بعد.</td></tr>`;
+        return;
+    }
+    
+    const sorted = [...audits].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+    sorted.forEach(log => {
+        const dt = new Date(log.timestamp).toLocaleString('ar-IQ', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        tbody.innerHTML += `
+            <tr>
+                <td>${dt}</td>
+                <td><strong>${log.auditedBy}</strong></td>
+                <td style="text-align: center;">${log.totalItems}</td>
+                <td style="text-align: center; color:#10b981; font-weight:bold;">${log.matchCount}</td>
+                <td style="text-align: center; color:var(--danger); font-weight:bold;">${log.deficitCount}</td>
+                <td style="text-align: center; color:#3b82f6; font-weight:bold;">${log.surplusCount}</td>
+                <td class="price-value" style="color:var(--danger); font-weight:700; text-align: left;">${log.shortageValue.toLocaleString()} د.ع</td>
+                <td style="text-align: center;">
+                    <button class="btn btn-secondary btn-sm" onclick="viewHistoricalAuditReport('${log.id}')">تفاصيل وطباعة</button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function viewHistoricalAuditReport(auditId) {
+    const log = AppState.inventoryAudits.find(a => a.id === auditId);
+    if (!log) return;
+    
+    const modalBody = document.getElementById('audit-report-printable-area');
+    if (modalBody) {
+        const dtStr = new Date(log.timestamp).toLocaleString('ar-IQ');
+        let tableRows = '';
+        
+        log.items.forEach(it => {
+            let statusText = '';
+            let styleColor = '';
+            
+            if (it.difference === 0) {
+                statusText = 'مطابق';
+                styleColor = 'color: #10b981;';
+            } else if (it.difference < 0) {
+                statusText = `ناقص (${it.difference})`;
+                styleColor = 'color: var(--danger); font-weight: bold;';
+            } else {
+                statusText = `زائد (+${it.difference})`;
+                styleColor = 'color: var(--primary); font-weight: bold;';
+            }
+            
+            tableRows += `
+                <tr>
+                    <td style="font-family:'Inter';">${it.barcode}</td>
+                    <td><strong>${it.name}</strong></td>
+                    <td style="text-align:center;">${it.systemQty}</td>
+                    <td style="text-align:center; font-weight:bold;">${it.physicalQty}</td>
+                    <td style="text-align:center; ${styleColor}">${it.difference === 0 ? '--' : (it.difference > 0 ? '+' : '') + it.difference}</td>
+                    <td style="${styleColor}">${statusText}</td>
+                    <td style="text-align:left;">${it.cost.toLocaleString()} د.ع</td>
+                </tr>
+            `;
+        });
+        
+        modalBody.innerHTML = `
+            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 20px;">
+                <h2 style="margin: 0; color:#000;">تقرير جرد ومطابقة المخزن الفعلي - يلا فيب</h2>
+                <p style="margin: 5px 0 0 0; font-size:12px; color:#555;">الرقم التعريفي: ${log.id} | التاريخ والوقت: ${dtStr}</p>
+                <p style="margin: 5px 0 0 0; font-size:12px; color:#555;">مسؤول الجرد: ${log.auditedBy}</p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; text-align: center;">
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px;">
+                    <span style="font-size: 11px; color: #555;">إجمالي المواد</span><br>
+                    <strong style="font-size:16px;">${log.totalItems}</strong>
+                </div>
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px; background:#f0fdf4;">
+                    <span style="font-size: 11px; color: #166534;">المطابقة</span><br>
+                    <strong style="font-size:16px; color:#166534;">${log.matchCount}</strong>
+                </div>
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px; background:#fef2f2;">
+                    <span style="font-size: 11px; color: #991b1b;">الناقصة</span><br>
+                    <strong style="font-size:16px; color:#991b1b;">${log.deficitCount}</strong>
+                </div>
+                <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px; background:#eff6ff;">
+                    <span style="font-size: 11px; color: #1e40af;">الزائدة</span><br>
+                    <strong style="font-size:16px; color:#1e40af;">${log.surplusCount}</strong>
+                </div>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; margin-bottom:20px; font-size: 13px; border:1px solid #ccc; padding:10px; border-radius:8px; background:#fafafa;">
+                <span>إجمالي القيمة التقديرية للعجز (الناقص): <strong>${log.shortageValue.toLocaleString()} د.ع</strong></span>
+                <span>إجمالي القيمة التقديرية للوفرة (الزائد): <strong>${log.surplusValue.toLocaleString()} د.ع</strong></span>
+            </div>
+            
+            <table class="print-table" style="width: 100%; border-collapse: collapse; margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th style="border:1px solid #000; padding:8px;">باركود</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:right;">اسم المنتج</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:center;">النظام</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:center;">الفعلي</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:center;">الفارق</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:right;">الحالة</th>
+                        <th style="border:1px solid #000; padding:8px; text-align:left;">سعر التكلفة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        `;
+        
+        document.getElementById('audit-report-modal').classList.add('active');
+    }
+}
+
+function closeAuditReportModal() {
+    document.getElementById('audit-report-modal').classList.remove('active');
+}
+
+function printAuditReportFromModal() {
+    const reportContent = document.getElementById('audit-report-printable-area').innerHTML;
+    const printContainer = document.getElementById('receipt-print-wrapper');
+    if (!printContainer) return;
+    
+    printContainer.classList.add('a4-report');
+    printContainer.innerHTML = reportContent;
+    
+    // Force show print container in DOM
+    printContainer.style.display = 'block';
+    printContainer.style.position = 'fixed';
+    printContainer.style.top = '0';
+    printContainer.style.left = '0';
+    printContainer.style.width = '100%';
+    printContainer.style.zIndex = '99999';
+    printContainer.style.background = '#fff';
+    printContainer.style.color = '#000';
+    printContainer.style.padding = '30px';
+    printContainer.style.direction = 'rtl';
+    
+    function restorePrintState() {
+        printContainer.classList.remove('a4-report');
+        printContainer.style.display = '';
+        printContainer.style.position = '';
+        printContainer.style.top = '';
+        printContainer.style.left = '';
+        printContainer.style.width = '';
+        printContainer.style.zIndex = '';
+        printContainer.style.background = '';
+        printContainer.style.color = '';
+        printContainer.style.padding = '';
+        printContainer.style.direction = '';
+        window.removeEventListener('afterprint', restorePrintState);
+    }
+    
+    window.addEventListener('afterprint', restorePrintState);
+    
+    setTimeout(() => {
+        window.print();
+        setTimeout(restorePrintState, 2000);
+    }, 250);
+}
+
+
+// ==========================================
+// --- MONTHLY DAILY DETAILS INSPECTOR ---
+// ==========================================
+function renderMonthlyDayDetails() {
+    const daySelect = document.getElementById('monthly-day-select');
+    const dayDetailsDiv = document.getElementById('monthly-day-details');
+    const tbody = document.getElementById('month-day-transactions-body');
+    if (!daySelect || !dayDetailsDiv || !tbody) return;
+    
+    const selectedDay = daySelect.value;
+    if (!selectedDay) {
+        dayDetailsDiv.style.display = 'none';
+        return;
+    }
+    
+    let salesTotal = 0;
+    let profitTotal = 0;
+    let expensesTotal = 0;
+    let debtsTotal = 0;
+    
+    tbody.innerHTML = '';
+    
+    AppState.transactions.forEach(t => {
+        const dateObj = new Date(t.timestamp || Date.now());
+        const dayStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+        
+        if (dayStr === selectedDay) {
+            let amount = 0;
+            let typeName = '';
+            let details = '';
+            
+            if (t.type === 'sale') {
+                typeName = 'مبيعات';
+                amount = t.total;
+                salesTotal += t.total;
+                
+                let cogs = 0;
+                t.items.forEach(it => {
+                    const origProd = AppState.products.find(p => p.id === it.id);
+                    const cost = origProd ? (origProd.cost || 0) : (it.cost || 0);
+                    cogs += cost * it.quantity;
+                });
+                profitTotal += (t.total - cogs);
+                
+                details = t.items.map(it => `${it.name} (x${it.quantity})`).join(', ');
+                if (t.paymentType === 'credit') {
+                    typeName += ' (آجل)';
+                    details += ` - الزبون: ${t.customerName}`;
+                }
+            } else if (t.type === 'expense') {
+                typeName = 'مصروف';
+                amount = t.amount;
+                expensesTotal += t.amount;
+                details = `${t.category} - ${t.description || ''}`;
+            } else if (t.type === 'salary') {
+                typeName = 'رواتب';
+                amount = t.amount;
+                if (t.direction === 'in') {
+                    amount = -t.amount;
+                }
+                expensesTotal += amount;
+                details = `${t.employeeName} - ${t.description || ''}`;
+            } else if (t.type === 'debt_payment') {
+                typeName = 'تسديد دين زبون';
+                amount = t.amount;
+                debtsTotal += t.amount;
+                details = `الزبون: ${t.customerName} - ${t.description || ''}`;
+            }
+            
+            const timeStr = dateObj.toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' });
+            
+            tbody.innerHTML += `
+                <tr>
+                    <td style="font-family:'Inter';">${t.id}</td>
+                    <td>${timeStr}</td>
+                    <td><span class="badge ${t.type === 'sale' ? 'success' : (t.type === 'expense' || t.type === 'salary' ? 'danger' : 'warning')}">${typeName}</span></td>
+                    <td>${details}</td>
+                    <td class="price-value" style="font-family:'Inter'; font-weight:700;">${amount.toLocaleString()} د.ع</td>
+                    <td>${t.createdBy || '--'}</td>
+                </tr>
+            `;
+        }
+    });
+    
+    document.getElementById('month-day-sales').innerText = `${salesTotal.toLocaleString()} د.ع`;
+    document.getElementById('month-day-profit').innerText = `${profitTotal.toLocaleString()} د.ع`;
+    document.getElementById('month-day-expenses').innerText = `${expensesTotal.toLocaleString()} د.ع`;
+    document.getElementById('month-day-debts').innerText = `${debtsTotal.toLocaleString()} د.ع`;
+    
+    dayDetailsDiv.style.display = 'block';
+}
+
+
+function closeDebtorDetailModal() {
+    const modal = document.getElementById('debtor-detail-modal');
+    if (modal) modal.classList.remove('active');
 }
 
 // Initialize on page load

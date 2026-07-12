@@ -141,6 +141,12 @@
                         <span>المستودع والمخزن</span>
                     </a>
                 </li>
+                <li class="nav-item" data-tab="inventory-audit">
+                    <a href="javascript:void(0)" onclick="switchTab('inventory-audit')">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span>جرد ومطابقة المخزن</span>
+                    </a>
+                </li>
                 <li class="nav-item" data-tab="settings">
                     <a href="javascript:void(0)" onclick="switchTab('settings')">
                         <i class="fa-solid fa-sliders"></i>
@@ -479,6 +485,13 @@
                             <span class="stat-card-value" id="report-today-net">0 د.ع</span>
                         </div>
                     </div>
+                    <div class="stat-card" style="border-right: 4px solid #ec4899;">
+                        <div class="stat-card-icon" style="background: rgba(236, 72, 153, 0.1); border-color: rgba(236, 72, 153, 0.2); color: #ec4899;"><i class="fa-solid fa-hand-holding-hand"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-card-label">ديون اليوم (الآجلة والتحصيل)</span>
+                            <span class="stat-card-value" id="report-today-debts">0 د.ع</span>
+                        </div>
+                    </div>
                     <div class="stat-card" style="border-right: 4px solid #8b5cf6;">
                         <div class="stat-card-icon" style="background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.2); color: #8b5cf6;"><i class="fa-solid fa-vault"></i></div>
                         <div class="stat-card-info">
@@ -577,7 +590,14 @@
                             <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
                                 <div class="stat-card-icon accent" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-scale-balanced"></i></div>
                                 <div class="stat-card-info">
-                                    <span class="stat-card-label" style="font-size:11px;">صافي الربح الشهري</span>
+                                    <span class="stat-card-label" style="font-size:11px;">أرباح البضاعة المباعة (الصافي)</span>
+                                    <span class="stat-card-value" id="month-cogs-profit" style="font-size:16px; color:var(--primary);">0 د.ع</span>
+                                </div>
+                            </div>
+                            <div class="stat-card" style="padding:15px; border-radius:14px; gap:12px;">
+                                <div class="stat-card-icon accent" style="width:40px; height:40px; font-size:18px;"><i class="fa-solid fa-wallet"></i></div>
+                                <div class="stat-card-info">
+                                    <span class="stat-card-label" style="font-size:11px;">صافي الدخل الشهري (تدفق نقدي)</span>
                                     <span class="stat-card-value" id="month-net-profit" style="font-size:16px;">0 د.ع</span>
                                 </div>
                             </div>
@@ -603,9 +623,11 @@
                                 <thead>
                                     <tr>
                                         <th>اسم المنتج / البضاعة</th>
-                                        <th>الكمية الإجمالية المباعة</th>
+                                        <th style="text-align: center;">الكمية المباعة</th>
+                                        <th>سعر الشراء (التكلفة)</th>
                                         <th>متوسط سعر البيع</th>
-                                        <th>إجمالي الإيراد المحقق</th>
+                                        <th>إجمالي الإيراد</th>
+                                        <th>صافي الأرباح (الربح)</th>
                                     </tr>
                                 </thead>
                                 <tbody id="monthly-items-breakdown-body">
@@ -615,7 +637,7 @@
                         </div>
                         
                         <h4 style="font-size:13px; margin-top:20px; margin-bottom:12px; color:#fff; border-right:3px solid var(--primary); padding-right:8px;">تقرير الأرباح والمبيعات حسب مصدر المنتج (المورد)</h4>
-                        <div class="basket-table-container">
+                        <div class="basket-table-container" style="margin-bottom: 25px;">
                             <table class="main-table">
                                 <thead>
                                     <tr>
@@ -631,6 +653,67 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <!-- Daily breakdown / inspector -->
+                        <h4 style="font-size:13px; margin-top:20px; margin-bottom:12px; color:#fff; border-right:3px solid var(--primary); padding-right:8px;">تفاصيل وأرباح وصرفيات يوم محدد من الشهر</h4>
+                        <div class="card-panel" style="background: rgba(255,255,255,0.01); border: 1px solid var(--border-color); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+                            <div class="d-flex align-center gap-10" style="margin-bottom: 15px; flex-wrap: wrap;">
+                                <label style="font-size: 13px; margin: 0; color: var(--text-main);">اختر اليوم للمعاينة:</label>
+                                <select id="monthly-day-select" class="form-control" style="width: 180px; padding: 6px 12px; font-size:13px;" onchange="renderMonthlyDayDetails()">
+                                    <option value="">-- اختر اليوم --</option>
+                                </select>
+                            </div>
+                            
+                            <div id="monthly-day-details" style="display: none;">
+                                <!-- Day summary stats -->
+                                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 15px;">
+                                    <div class="stat-card" style="padding: 10px 15px; border-radius: 10px; gap: 8px;">
+                                        <div class="stat-card-info">
+                                            <span class="stat-card-label" style="font-size: 10px;">مبيعات اليوم</span>
+                                            <span class="stat-card-value" id="month-day-sales" style="font-size: 14px;">0 د.ع</span>
+                                        </div>
+                                    </div>
+                                    <div class="stat-card" style="padding: 10px 15px; border-radius: 10px; gap: 8px;">
+                                        <div class="stat-card-info">
+                                            <span class="stat-card-label" style="font-size: 10px;">أرباح المبيعات الصافية</span>
+                                            <span class="stat-card-value" id="month-day-profit" style="font-size: 14px; color: var(--primary);">0 د.ع</span>
+                                        </div>
+                                    </div>
+                                    <div class="stat-card" style="padding: 10px 15px; border-radius: 10px; gap: 8px;">
+                                        <div class="stat-card-info">
+                                            <span class="stat-card-label" style="font-size: 10px;">صرفيات ومصاريف اليوم</span>
+                                            <span class="stat-card-value" id="month-day-expenses" style="font-size: 14px; color: var(--danger);">0 د.ع</span>
+                                        </div>
+                                    </div>
+                                    <div class="stat-card" style="padding: 10px 15px; border-radius: 10px; gap: 8px;">
+                                        <div class="stat-card-info">
+                                            <span class="stat-card-label" style="font-size: 10px;">المحصل من الديون</span>
+                                            <span class="stat-card-value" id="month-day-debts" style="font-size: 14px; color: var(--accent);">0 د.ع</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Day transactions table -->
+                                <div class="basket-table-container">
+                                    <table class="main-table" style="font-size: 12px;">
+                                        <thead>
+                                            <tr>
+                                                <th>رقم العملية</th>
+                                                <th>الوقت</th>
+                                                <th>النوع</th>
+                                                <th>التفاصيل / البيان</th>
+                                                <th>القيمة</th>
+                                                <th>المنفذ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="month-day-transactions-body">
+                                            <!-- Dynamic transactions for selected day -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -730,86 +813,30 @@
                     </div>
                 </div>
 
-                <div class="grid-2col">
-                    <!-- Left: Debtors list -->
-                    <div class="card-panel">
-                        <div class="card-panel-title">قائمة الأشخاص المطلوبين</div>
-                        <div class="search-add-box" style="margin-bottom:15px;">
-                            <div class="input-icon-wrapper w-full">
-                                <input type="text" id="debts-search-input" class="form-control" placeholder="ابحث عن شخص بالاسم..." oninput="renderDebtsList()">
-                                <i class="fa-solid fa-magnifying-glass"></i>
-                            </div>
-                        </div>
-                        <div class="basket-table-container" style="max-height: none;">
-                            <table class="main-table">
-                                <thead>
-                                    <tr>
-                                        <th>اسم الشخص</th>
-                                        <th>مبلغ الدين المتبقي</th>
-                                        <th style="width: 25%; text-align: center;">الإجراءات</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="debts-list-body">
-                                    <!-- Dynamic rows loaded from app.js -->
-                                </tbody>
-                            </table>
+                <div class="card-panel">
+                    <div class="card-panel-title">قائمة الأشخاص المطلوبين</div>
+                    <div class="search-add-box" style="margin-bottom:15px;">
+                        <div class="input-icon-wrapper w-full">
+                            <input type="text" id="debts-search-input" class="form-control" placeholder="ابحث عن شخص بالاسم..." oninput="renderDebtsList()">
+                            <i class="fa-solid fa-magnifying-glass"></i>
                         </div>
                     </div>
-
-                    <!-- Right: Selected debtor details & pay debt form -->
-                    <div class="card-panel" id="debtor-detail-panel" style="display: none;">
-                        <div class="card-panel-title">تفاصيل حساب المدين: <span id="debtor-name-display" style="color:var(--accent);">--</span></div>
-                        
-                        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px;">
-                            <div class="bill-row">
-                                <span>إجمالي الدين المتبقي:</span>
-                                <strong id="debtor-balance-display" class="price-value" style="color:var(--danger); font-size:18px;">0 د.ع</strong>
-                            </div>
-                        </div>
-
-                        <!-- Settle Debt Form -->
-                        <form onsubmit="handleRepayDebt(event)" style="margin-bottom: 20px;">
-                            <input type="hidden" id="debtor-id-input">
-                            <div class="form-group">
-                                <label for="repay-amount">المبلغ المدفوع للتسديد (د.ع)</label>
-                                <div class="input-icon-wrapper">
-                                    <input type="number" id="repay-amount" class="form-control" placeholder="أدخل المبلغ..." required>
-                                    <i class="fa-solid fa-money-bill-1-wave"></i>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="repay-notes">ملاحظات التسديد (تفاصيل إضافية)</label>
-                                <input type="text" id="repay-notes" class="form-control" placeholder="مثال: تسديد دفعة أولى، تسديد كامل...">
-                            </div>
-                            <button type="submit" class="btn btn-accent w-full" style="height: 40px; font-weight: 700;">
-                                <i class="fa-solid fa-circle-check"></i>
-                                <span>تسجيل عملية التسديد وقبض المبلغ</span>
-                            </button>
-                        </form>
-
-                        <div class="card-panel-title" style="font-size: 14px; margin-bottom: 10px;">سجل الحركات والتسديدات للمدين</div>
-                        <div class="basket-table-container" style="max-height: 200px;">
-                            <table class="main-table" style="font-size: 12px;">
-                                <thead>
-                                    <tr>
-                                        <th>التاريخ والوقت</th>
-                                        <th>الحركة</th>
-                                        <th>المبلغ</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="debtor-history-body">
-                                    <!-- Dynamic rows loaded from app.js -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    
-                    <!-- Right Default placeholder -->
-                    <div class="card-panel" id="debtor-empty-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; color: var(--text-muted);">
-                        <i class="fa-solid fa-hand-holding-hand" style="font-size: 3rem; margin-bottom: 15px; opacity: 0.3;"></i>
-                        <p>اختر شخصاً من القائمة الجانبية لعرض تفاصيل دينه وتسجيل الدفعات.</p>
+                    <div class="basket-table-container" style="max-height: none;">
+                        <table class="main-table">
+                            <thead>
+                                <tr>
+                                    <th>اسم الشخص</th>
+                                    <th>مبلغ الدين المتبقي</th>
+                                    <th style="width: 25%; text-align: center;">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="debts-list-body">
+                                <!-- Dynamic rows loaded from app.js -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
+            </div>
             </div>
 
             <!-- TAB 5: INVENTORY WORKSPACE -->
@@ -853,6 +880,7 @@
                     </div>
                 </div>
 
+                <!-- Inventory Main Table -->
                 <div class="card-panel">
                     <div class="card-panel-title">
                         <span>قائمة العناصر المتوفرة بالمستودع</span>
@@ -861,81 +889,133 @@
                                 <i class="fa-solid fa-plus"></i>
                                 <span>إضافة منتج جديد</span>
                             </button>
-                             <button class="btn btn-danger btn-sm" onclick="clearInventory()">
-                                 <i class="fa-solid fa-trash-can"></i>
-                                 <span>تصفير المخزن بالكامل</span>
-                             </button>
-                         </div>
-                     </div>
+                            <button class="btn btn-accent btn-sm" onclick="openSupplyInvoiceModal()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
+                                <i class="fa-solid fa-file-import"></i>
+                                <span>قائمة توريد جديدة</span>
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="clearInventory()">
+                                <i class="fa-solid fa-trash-can"></i>
+                                <span>تصفير المخزن بالكامل</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="search-add-box" style="margin-bottom:15px;">
+                        <div class="input-icon-wrapper w-full">
+                            <input type="text" id="inventory-search-input" class="form-control" placeholder="ابحث عن منتج بالاسم أو الباركود..." oninput="renderInventoryTable()">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </div>
+                        <div class="sub-tabs-container">
+                            <button type="button" class="sub-tab-btn active" id="inv-filter-all" onclick="setInventoryFilter('all')">الكل</button>
+                            <button type="button" class="sub-tab-btn" id="inv-filter-low" onclick="setInventoryFilter('low')">مخزون منخفض (≤ 5)</button>
+                            <button type="button" class="sub-tab-btn" id="inv-filter-empty" onclick="setInventoryFilter('empty')">نفذ (0)</button>
+                        </div>
+                    </div>
 
-                     <!-- Search filter toolbar -->
-                     <div class="search-add-box" style="flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px;">
-                         <div class="input-icon-wrapper" style="flex-grow: 1; max-width: 500px;">
-                             <input type="text" id="inventory-search-input" class="form-control" placeholder="ابحث باسم المنتج أو امسح الباركود الخاص به مباشرة لتعديله..." oninput="filterInventory()">
-                             <i class="fa-solid fa-magnifying-glass"></i>
-                         </div>
-                         <div class="sub-tabs-container">
-                             <button type="button" class="sub-tab-btn active" id="inv-filter-all" onclick="setInventoryFilter('all')">عرض الكل</button>
-                             <button type="button" class="sub-tab-btn" id="inv-filter-low" onclick="setInventoryFilter('low')">مخزون منخفض (≤ 5)</button>
-                             <button type="button" class="sub-tab-btn" id="inv-filter-empty" onclick="setInventoryFilter('empty')">نفذ (0)</button>
-                         </div>
-                     </div>
+                    <!-- Inventory items table list -->
+                    <div class="basket-table-container" style="max-height:none;">
+                        <table class="main-table">
+                            <thead>
+                                <tr>
+                                    <th>رقم الباركود</th>
+                                    <th>اسم المنتج</th>
+                                    <th>سعر التكلفة</th>
+                                    <th>سعر البيع المفرد</th>
+                                    <th>الكمية المتوفرة</th>
+                                    <th>إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventory-table-body">
+                                <!-- Dynamic rows inside app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
 
-                     <!-- Inventory items table list -->
-                     <div class="basket-table-container" style="max-height:none;">
-                         <table class="main-table">
-                             <thead>
-                                 <tr>
-                                     <th>رقم الباركود</th>
-                                     <th>اسم المنتج</th>
-                                     <th>سعر التكلفة</th>
-                                     <th>سعر البيع المفرد</th>
-                                     <th>الكمية المتوفرة</th>
-                                     <th>إجراءات</th>
-                                 </tr>
-                             </thead>
-                             <tbody id="inventory-table-body">
-                                 <!-- Dynamic rows inside app.js -->
-                             </tbody>
-                         </table>
-                     </div>
-                 </div>
-             </div>
+            <!-- TAB 5.5: NEW PRODUCTS REPORT -->
+            <div id="new-products-report-panel" class="workspace-panel">
+                <div class="card-panel">
+                    <div class="card-panel-title" style="flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 15px;">
+                        <span>تقرير التوريدات والمدخلات والموردين</span>
+                        <div class="sub-tabs-container">
+                            <button type="button" class="sub-tab-btn active" id="subtab-supply-invoices-btn" onclick="switchSupplyReportSubTab('invoices')">سجل قوائم التوريد</button>
+                            <button type="button" class="sub-tab-btn" id="subtab-supply-items-btn" onclick="switchSupplyReportSubTab('items')">سجل المواد المضافة</button>
+                            <button type="button" class="sub-tab-btn" id="subtab-suppliers-debts-btn" onclick="switchSupplyReportSubTab('suppliers')">مستحقات وديون الموردين</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Sub-tab 1: Invoices view -->
+                    <div id="supply-invoices-subpanel">
+                        <div class="basket-table-container">
+                            <table class="main-table">
+                                <thead>
+                                    <tr>
+                                        <th>تاريخ التوريد</th>
+                                        <th>المورد / الموزع</th>
+                                        <th>رقم الفاتورة</th>
+                                        <th>التكلفة الإجمالية</th>
+                                        <th>حالة الدفع</th>
+                                        <th>المبلغ المدفوع</th>
+                                        <th>الدين المتبقي</th>
+                                        <th>الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="supply-invoices-report-body">
+                                    <!-- Supply Invoices rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Sub-tab 2: Items view -->
+                    <div id="supply-items-subpanel" style="display: none;">
+                        <div class="search-add-box" style="margin-bottom: 15px;">
+                            <div class="input-icon-wrapper" style="width: 100%;">
+                                <input type="text" id="new-products-search" class="form-control" placeholder="ابحث باسم المنتج أو رقم الفاتورة أو المصدر..." oninput="filterNewProductsReport()">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </div>
+                        </div>
+                        <div class="basket-table-container">
+                            <table class="main-table">
+                                <thead>
+                                    <tr>
+                                        <th>تاريخ الإضافة</th>
+                                        <th>اسم المنتج</th>
+                                        <th>الكمية المُدخلة</th>
+                                        <th>رقم الفاتورة</th>
+                                        <th>المصدر / المورد</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="new-products-report-body">
+                                    <!-- Dynamic rows loaded from app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Sub-tab 3: Suppliers Debts view -->
+                    <div id="suppliers-debts-subpanel" style="display: none;">
+                        <!-- Supplier debts list -->
+                        <div class="basket-table-container">
+                            <table class="main-table">
+                                <thead>
+                                    <tr>
+                                        <th>اسم المورد / الشركة</th>
+                                        <th>إجمالي الديون المترتبة له (المتبقية)</th>
+                                        <th style="width: 25%; text-align: center;">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="suppliers-debts-report-body">
+                                    <!-- Supplier debts rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-             <!-- TAB 5.5: NEW PRODUCTS REPORT -->
-             <div id="new-products-report-panel" class="workspace-panel">
-                 <div class="card-panel">
-                     <div class="card-panel-title">
-                         <span>تقرير إضافة المنتجات (سجل التوريدات)</span>
-                         <button class="btn btn-secondary btn-sm" onclick="renderNewProductsReport()"><i class="fa-solid fa-rotate-right"></i> تحديث</button>
-                     </div>
-                     <div class="search-add-box" style="margin-bottom: 15px;">
-                         <div class="input-icon-wrapper" style="width: 100%;">
-                             <input type="text" id="new-products-search" class="form-control" placeholder="ابحث باسم المنتج أو رقم الفاتورة أو المصدر..." oninput="filterNewProductsReport()">
-                             <i class="fa-solid fa-magnifying-glass"></i>
-                         </div>
-                     </div>
-                     <div class="basket-table-container">
-                         <table class="main-table">
-                             <thead>
-                                 <tr>
-                                     <th>تاريخ الإضافة</th>
-                                     <th>اسم المنتج</th>
-                                     <th>الكمية المُدخلة</th>
-                                     <th>رقم الفاتورة</th>
-                                     <th>المصدر / المورد</th>
-                                 </tr>
-                             </thead>
-                             <tbody id="new-products-report-body">
-                                 <!-- Dynamic rows loaded from app.js -->
-                             </tbody>
-                         </table>
-                     </div>
-                 </div>
-             </div>
-
-             <!-- TAB 6: SYSTEM CONFIGURATIONS & ACCESS SETTINGS -->
-             <div id="settings-panel" class="workspace-panel">
+            <!-- TAB 6: SYSTEM CONFIGURATIONS & ACCESS SETTINGS -->
+            <div id="settings-panel" class="workspace-panel">
                  <div class="settings-workspace">
                     <!-- Right Sidebar Navigation tabs -->
                     <div class="settings-sidebar">
@@ -1073,6 +1153,8 @@
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="treasury"> المطابقة</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="debts" checked> الديون والذمم</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="inventory"> المستودع</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="inventory-audit"> جرد المخزن</label>
+                                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="new-products-report"> تقرير البضاعة الجديدة</label>
                                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="new-user-perm" value="settings"> الإعدادات</label>
                                         </div>
                                     </div>
@@ -1144,6 +1226,111 @@
                     </div>
                 </div>
             </div>
+
+            <!-- TAB 7: INVENTORY AUDIT / RECONCILIATION -->
+            <div id="inventory-audit-panel" class="workspace-panel">
+                <div class="card-panel">
+                    <div class="card-panel-title">
+                        <span>جرد ومطابقة كميات المخزن الفعلي</span>
+                        <div class="d-flex gap-10">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="copySystemQtyToPhysical()" style="display:flex; align-items:center; gap:5px;">
+                                <i class="fa-solid fa-copy"></i>
+                                <span>نسخ كميات النظام للفعلي</span>
+                            </button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="resetAuditForm()" style="display:flex; align-items:center; gap:5px;">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>تصفير مدخلات الجرد</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <p style="color:var(--text-muted); font-size:12px; margin-bottom:15px;">
+                        قم بجر الكميات الفعلية المتوفرة في المحل حالياً وإدخالها في حقل "الكمية الفعلية". ستقوم المنظومة بمقارنتها مع كميات النظام وإبراز الفروقات.
+                    </p>
+
+                    <!-- Audit live stats -->
+                    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <div class="stat-card" style="padding:10px 15px; border-right: 3px solid var(--primary); background: rgba(255,255,255,0.01);">
+                            <div class="stat-card-info">
+                                <span class="stat-card-label" style="font-size:11px;">إجمالي المواد</span>
+                                <span class="stat-card-value" id="audit-stat-total" style="font-size:16px;">0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="padding:10px 15px; border-right: 3px solid #10b981; background: rgba(255,255,255,0.01);">
+                            <div class="stat-card-info">
+                                <span class="stat-card-label" style="font-size:11px;">مطابقة</span>
+                                <span class="stat-card-value" id="audit-stat-match" style="font-size:16px; color:#10b981;">0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="padding:10px 15px; border-right: 3px solid var(--danger); background: rgba(255,255,255,0.01);">
+                            <div class="stat-card-info">
+                                <span class="stat-card-label" style="font-size:11px;">ناقصة (عجز)</span>
+                                <span class="stat-card-value" id="audit-stat-short" style="font-size:16px; color:var(--danger);">0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="padding:10px 15px; border-right: 3px solid #3b82f6; background: rgba(255,255,255,0.01);">
+                            <div class="stat-card-info">
+                                <span class="stat-card-label" style="font-size:11px;">زائدة (وفرة)</span>
+                                <span class="stat-card-value" id="audit-stat-surplus" style="font-size:16px; color:#3b82f6;">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="basket-table-container" style="max-height: 450px;">
+                        <table class="main-table" style="font-size:13px;">
+                            <thead>
+                                <tr>
+                                    <th>الباركود</th>
+                                    <th>اسم المنتج</th>
+                                    <th style="text-align: center;">الكمية في النظام</th>
+                                    <th style="text-align: center; width: 150px;">الكمية الفعلية</th>
+                                    <th style="text-align: center;">الفارق</th>
+                                    <th>الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body">
+                                <!-- Dynamic products audit list -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="margin-top: 20px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+                        <button type="button" class="btn btn-accent" onclick="generateAuditReport()" style="flex-grow:1; height: 42px; font-weight: 700;">
+                            <i class="fa-solid fa-file-invoice"></i>
+                            <span>إصدار وحفظ تقرير جرد المطابقة</span>
+                        </button>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size:13px; font-weight:700; margin:0;">
+                            <input type="checkbox" id="audit-reconcile-stock-qty" checked>
+                            <span>تحديث كميات النظام لتطابق المدخلات الفعلية</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Audit History Logs -->
+                <div class="card-panel mt-20">
+                    <div class="card-panel-title">سجل تقارير الجرد السابقة</div>
+                    <div class="basket-table-container">
+                        <table class="main-table">
+                            <thead>
+                                <tr>
+                                    <th>التاريخ والوقت</th>
+                                    <th>مسؤول الجرد</th>
+                                    <th style="text-align: center;">إجمالي المواد</th>
+                                    <th style="text-align: center;">المطابقة</th>
+                                    <th style="text-align: center;">الناقصة</th>
+                                    <th style="text-align: center;">الزائدة</th>
+                                    <th style="text-align: center;">إجمالي قيمة العجز</th>
+                                    <th style="text-align: center;">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-history-tbody">
+                                <!-- Dynamic audit logs list -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -1468,6 +1655,8 @@
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="treasury"> المطابقة</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="debts"> الديون والذمم</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="inventory"> المستودع</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="inventory-audit"> جرد المخزن</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="new-products-report"> تقرير البضاعة الجديدة</label>
                         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" class="edit-user-perm" value="settings"> الإعدادات</label>
                     </div>
                 </div>
@@ -1542,7 +1731,211 @@
         </div>
     </div>
 
+    <!-- DEBTOR DETAIL MODAL -->
+    <div id="debtor-detail-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 600px; width: 95%;">
+            <div class="modal-header">
+                <h3>تفاصيل حساب المدين: <span id="debtor-name-display" style="color:var(--accent);">--</span></h3>
+                <button type="button" class="modal-close-btn" onclick="closeDebtorDetailModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px; text-align: right;">
+                <div class="bill-row" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>إجمالي الدين المتبقي للمدين:</span>
+                    <strong id="debtor-balance-display" class="price-value" style="color:var(--danger); font-size:18px;">0 د.ع</strong>
+                </div>
+            </div>
 
+            <!-- Settle Debt Form -->
+            <form onsubmit="handleRepayDebt(event)" style="margin-bottom: 20px; text-align: right;">
+                <input type="hidden" id="debtor-id-input">
+                <div class="form-group">
+                    <label for="repay-amount">المبلغ المدفوع للتسديد (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="repay-amount" class="form-control" placeholder="أدخل المبلغ..." required>
+                        <i class="fa-solid fa-money-bill-1-wave"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="repay-notes">ملاحظات التسديد (تفاصيل إضافية)</label>
+                    <input type="text" id="repay-notes" class="form-control" placeholder="مثال: تسديد دفعة أولى، تسديد كامل...">
+                </div>
+                <button type="submit" class="btn btn-accent w-full" style="height: 40px; font-weight: 700;">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>تسجيل عملية التسديد وقبض المبلغ</span>
+                </button>
+            </form>
+
+            <div class="card-panel-title" style="font-size: 14px; margin-bottom: 10px; text-align: right;">سجل الحركات والتسديدات للمدين</div>
+            <div class="basket-table-container" style="max-height: 250px;">
+                <table class="main-table" style="font-size: 12px; width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>التاريخ والوقت</th>
+                            <th>الحركة</th>
+                            <th>المبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="debtor-history-body">
+                        <!-- Dynamic rows loaded from app.js -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- BATCH SUPPLY INVOICE MODAL -->
+    <div id="supply-invoice-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 800px; width: 95%;">
+            <div class="modal-header">
+                <h3>تسجيل قائمة توريد وشراء بضاعة جديدة</h3>
+                <button type="button" class="modal-close-btn" onclick="closeSupplyInvoiceModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveSupplyInvoice(event)" class="grid-form">
+                <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group" style="text-align: right;">
+                        <label for="supply-supplier">اسم المورد / الشركة</label>
+                        <input type="text" id="supply-supplier" class="form-control" placeholder="اكتب اسم المورد أو الشركة..." required>
+                    </div>
+                    <div class="form-group" style="text-align: right;">
+                        <label for="supply-invoice-num">رقم الفاتورة (الوصل)</label>
+                        <input type="text" id="supply-invoice-num" class="form-control" placeholder="رقم فاتورة المورد..." required>
+                    </div>
+                </div>
+                
+                <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group" style="text-align: right;">
+                        <label for="supply-payment-status">حالة دفع الفاتورة للمورد</label>
+                        <select id="supply-payment-status" class="form-control" onchange="toggleSupplyPaymentFields()" required>
+                            <option value="paid">مدفوع بالكامل (نقدي)</option>
+                            <option value="credit">آجل (دين للمورد)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="supply-paid-amount-group" style="display: none; text-align: right;">
+                        <label for="supply-paid-amount">المبلغ المدفوع حالياً (د.ع)</label>
+                        <input type="number" id="supply-paid-amount" class="form-control" placeholder="0" value="0">
+                    </div>
+                </div>
+
+                <!-- Item input sub-form -->
+                <div style="background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); padding: 15px; border-radius: 10px; margin-bottom: 15px; text-align: right;">
+                    <h4 style="font-size: 13px; color: var(--accent); margin-bottom: 10px;"><i class="fa-solid fa-plus"></i> إضافة مادة جديدة للقائمة</h4>
+                    <div class="grid-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label style="font-size: 11px;">الباركود</label>
+                            <input type="text" id="item-barcode" class="form-control" placeholder="امسح أو اكتب الباركود..." style="padding: 6px; font-size:12px;" oninput="checkSupplyBarcode(this.value)">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label style="font-size: 11px;">اسم المنتج</label>
+                            <input type="text" id="item-name" class="form-control" placeholder="اسم المنتج..." style="padding: 6px; font-size:12px;">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label style="font-size: 11px;">سعر التكلفة ($)</label>
+                            <input type="number" step="0.01" id="item-cost-usd" class="form-control" placeholder="تكلفة بالدولار..." style="padding: 6px; font-size:12px;" oninput="convertUsdToIqdSupplyCost()">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label style="font-size: 11px;">سعر التكلفة (د.ع)</label>
+                            <input type="number" id="item-cost-iqd" class="form-control" placeholder="تكلفة بالدينار..." style="padding: 6px; font-size:12px;" required>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label style="font-size: 11px;">سعر البيع (د.ع)</label>
+                            <input type="number" id="item-price" class="form-control" placeholder="سعر البيع..." style="padding: 6px; font-size:12px;" required>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label style="font-size: 11px;">الكمية</label>
+                            <input type="number" id="item-qty" class="form-control" placeholder="العدد..." style="padding: 6px; font-size:12px;" required>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-full" onclick="addTmpItemToSupplyInvoice()" style="margin-top: 10px; height: 32px; font-size: 12px; display:flex; align-items:center; justify-content:center; gap:5px;">
+                        <i class="fa-solid fa-cart-flatbed-suitcases"></i>
+                        <span>أضف هذه المادة إلى القائمة أدناه</span>
+                    </button>
+                </div>
+
+                <!-- Tmp items table list -->
+                <div class="basket-table-container" style="max-height: 200px; margin-bottom: 15px;">
+                    <table class="main-table" style="font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th>باركود</th>
+                                <th>المنتج</th>
+                                <th>سعر التكلفة</th>
+                                <th>سعر البيع</th>
+                                <th>الكمية</th>
+                                <th>الإجمالي</th>
+                                <th style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="supply-invoice-tmp-items">
+                            <!-- Temporary items rows go here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; border:1px solid var(--border-color);">
+                    <span>إجمالي قيمة القائمة التقديرية (التكلفة):</span>
+                    <strong id="supply-invoice-total-cost" style="color:var(--primary); font-size:16px;">0 د.ع</strong>
+                </div>
+
+                <div style="display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="submit" class="btn btn-accent" style="height: 40px; font-weight: 700;">تأكيد وحفظ القائمة بالكامل وتحديث المخزن</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeSupplyInvoiceModal()" style="height: 40px;">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- AUDIT REPORT MODAL -->
+    <div id="audit-report-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 900px; width: 95%;">
+            <div class="modal-header">
+                <h3>تقرير جرد ومطابقة المخزن الفعلي</h3>
+                <div style="display:flex; gap:10px;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="printAuditReportFromModal()">
+                        <i class="fa-solid fa-print"></i>
+                        <span>طباعة التقرير</span>
+                    </button>
+                    <button type="button" class="close-btn" onclick="closeAuditReportModal()"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="modal-body" id="audit-report-printable-area" style="max-height: 70vh; overflow-y: auto; padding: 15px; color: var(--text-main); text-align: right;">
+                <!-- Dynamic report output goes here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- SUPPLIER REPAY DEBT MODAL -->
+    <div id="supplier-repay-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3>تسديد دفعة مالية للمورد</h3>
+                <button type="button" class="modal-close-btn" onclick="closeSupplierRepayModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handlePaySupplierDebt(event)" style="text-align: right;">
+                <input type="hidden" id="supplier-repay-name">
+                <div class="form-group">
+                    <label>اسم المورد:</label>
+                    <strong id="supplier-repay-name-display" style="font-size: 15px; color: var(--accent); margin-right: 5px;">--</strong>
+                </div>
+                <div class="form-group">
+                    <label>الدين المستحق الحالي للمورد:</label>
+                    <strong id="supplier-repay-balance-display" style="font-size: 16px; color: var(--danger); margin-right: 5px;">0 د.ع</strong>
+                </div>
+                <div class="form-group">
+                    <label for="supplier-repay-amount">المبلغ المدفوع للتسديد من الصندوق (د.ع)</label>
+                    <div class="input-icon-wrapper">
+                        <input type="number" id="supplier-repay-amount" class="form-control" placeholder="أدخل مبلغ الدفع..." required>
+                        <i class="fa-solid fa-money-bill-1-wave"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="supplier-repay-notes">ملاحظات تسديد المورد</label>
+                    <input type="text" id="supplier-repay-notes" class="form-control" placeholder="مثال: تسديد دفعة نقدية من حساب الصندوق...">
+                </div>
+                <button type="submit" class="btn btn-accent w-full mt-10">تسجيل دفعة للمورد وتخصيم الصندوق</button>
+            </form>
+        </div>
+    </div>
 
     <!-- 4. HIDDEN INVOICE PRINT ELEMENT (FOR MEDIA PRINT CSS) -->
     <div id="receipt-print-wrapper"></div>
