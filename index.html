@@ -617,6 +617,70 @@
                             </div>
                         </div>
                         
+                        <!-- Monthly Audit & Reconciliation Settlement Panel -->
+                        <div class="card-panel" style="background: rgba(255, 255, 255, 0.015); border: 1px solid var(--border-color); padding: 20px; border-radius: 16px; margin-bottom: 25px;">
+                            <div class="card-panel-title" style="font-size: 15px; color: var(--accent); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px; margin-bottom: 15px;">
+                                <span><i class="fa-solid fa-scale-balanced" style="color:var(--accent)"></i> تسوية وجرد المطابقة الشهري (الخزينة والمخزن)</span>
+                            </div>
+                            
+                            <!-- Sub-grid of four metrics -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                                <!-- Cash Safe Surpluses/Deficits -->
+                                <div class="stat-card" style="padding: 12px 15px; border-radius: 12px; background: rgba(16, 185, 129, 0.03); border: 1px dashed rgba(16, 185, 129, 0.15); gap: 10px;">
+                                    <div class="stat-card-info">
+                                        <span class="stat-card-label" style="font-size: 10px;">إجمالي زيادات الخزينة (الزائد)</span>
+                                        <span class="stat-card-value price-value" id="month-recon-surplus" style="font-size: 15px; color: #10b981;">0 د.ع</span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" style="padding: 12px 15px; border-radius: 12px; background: rgba(239, 68, 68, 0.03); border: 1px dashed rgba(239, 68, 68, 0.15); gap: 10px;">
+                                    <div class="stat-card-info">
+                                        <span class="stat-card-label" style="font-size: 10px;">إجمالي عجز الخزينة (الناقص)</span>
+                                        <span class="stat-card-value price-value" id="month-recon-deficit" style="font-size: 15px; color: var(--danger);">0 د.ع</span>
+                                    </div>
+                                </div>
+                                <!-- Stock Inventory Shortages/Surpluses -->
+                                <div class="stat-card" style="padding: 12px 15px; border-radius: 12px; background: rgba(239, 68, 68, 0.03); border: 1px dashed rgba(239, 68, 68, 0.15); gap: 10px;">
+                                    <div class="stat-card-info">
+                                        <span class="stat-card-label" style="font-size: 10px;">عجز نقص البضاعة بسعر التكلفة</span>
+                                        <span class="stat-card-value price-value" id="month-audit-shortage" style="font-size: 15px; color: var(--danger);">0 د.ع</span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" style="padding: 12px 15px; border-radius: 12px; background: rgba(16, 185, 129, 0.03); border: 1px dashed rgba(16, 185, 129, 0.15); gap: 10px;">
+                                    <div class="stat-card-info">
+                                        <span class="stat-card-label" style="font-size: 10px;">وفرة زيادة البضاعة بسعر التكلفة</span>
+                                        <span class="stat-card-value price-value" id="month-audit-surplus" style="font-size: 15px; color: #10b981;">0 د.ع</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Settlement results steps -->
+                            <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--border-color); padding: 15px; border-radius: 12px;">
+                                <h5 style="font-size: 12px; color: #fff; margin-bottom: 10px; border-right: 3px solid var(--primary); padding-right: 8px;">نتائج تسوية الفروقات المتبادلة:</h5>
+                                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-muted);">
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>زيادات الخزينة بعد تسوية نقص البضائع (الزيادة الصافية):</span>
+                                        <strong id="settlement-adj-surplus" style="color:#fff;">0 د.ع</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>عجز الخزينة بعد تسوية زيادة البضائع (العجز الصافي):</span>
+                                        <strong id="settlement-adj-deficit" style="color:#fff;">0 د.ع</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 8px;">
+                                        <span>نقص البضائع المتبقي (غير المغطى بزيادات نقدية) - خسارة مخزن:</span>
+                                        <strong id="settlement-rem-shortage" style="color:var(--danger);">0 د.ع</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>زيادة البضائع المتبقية (غير المغطاة بعجز نقدي) - ربح مخزن:</span>
+                                        <strong id="settlement-rem-surplus" style="color:#10b981;">0 د.ع</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; font-weight: bold; font-size: 13px;">
+                                        <span style="color:#fff;">الأثر النهائي لتسوية الفروقات على الأرباح:</span>
+                                        <strong id="settlement-net-impact" style="color:var(--accent);">0 د.ع</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <h4 style="font-size:13px; margin-bottom:12px; color:#fff; border-right:3px solid var(--primary); padding-right:8px;">تفاصيل المبيعات التراكمية للبضائع خلال الشهر</h4>
                         <div class="basket-table-container">
                             <table class="main-table">
@@ -765,6 +829,24 @@
                                     <div class="difference-val" id="treasury-diff-value">0 د.ع</div>
                                 </div>
                             </div>
+                            
+                            <!-- Monthly Cumulative Surpluses / Deficits Boxes -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 25px;">
+                                <div class="stat-card" style="padding: 15px; border-radius: 14px; gap: 12px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.15);">
+                                    <div class="stat-card-icon" style="width:40px; height:40px; font-size:18px; background: rgba(16, 185, 129, 0.1); color: #10b981; border: none;"><i class="fa-solid fa-circle-plus"></i></div>
+                                    <div class="stat-card-info">
+                                        <span class="stat-card-label" style="font-size: 11px; color: var(--text-muted);">زيادات الخزينة التراكمية (الزائد)</span>
+                                        <span class="stat-card-value price-value" id="treasury-accum-surplus" style="font-size: 18px; color: #10b981;">0 د.ع</span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" style="padding: 15px; border-radius: 14px; gap: 12px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15);">
+                                    <div class="stat-card-icon danger" style="width:40px; height:40px; font-size:18px; background: rgba(239, 68, 68, 0.1); color: var(--danger); border: none;"><i class="fa-solid fa-circle-minus"></i></div>
+                                    <div class="stat-card-info">
+                                        <span class="stat-card-label" style="font-size: 11px; color: var(--text-muted);">عجز الخزينة المتراكم (الناقص)</span>
+                                        <span class="stat-card-value price-value" id="treasury-accum-deficit" style="font-size: 18px; color: var(--danger);">0 د.ع</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -836,7 +918,6 @@
                         </table>
                     </div>
                 </div>
-            </div>
             </div>
 
             <!-- TAB 5: INVENTORY WORKSPACE -->
@@ -1299,8 +1380,8 @@
                             <i class="fa-solid fa-file-invoice"></i>
                             <span>إصدار وحفظ تقرير جرد المطابقة</span>
                         </button>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size:13px; font-weight:700; margin:0;">
-                            <input type="checkbox" id="audit-reconcile-stock-qty" checked>
+                        <label style="display: none; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size:13px; font-weight:700; margin:0;">
+                            <input type="checkbox" id="audit-reconcile-stock-qty">
                             <span>تحديث كميات النظام لتطابق المدخلات الفعلية</span>
                         </label>
                     </div>
@@ -1882,6 +1963,123 @@
                     <button type="button" class="btn btn-secondary" onclick="closeSupplyInvoiceModal()" style="height: 40px;">إلغاء</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- VIEW/EDIT SUPPLY INVOICE DETAILS MODAL -->
+    <div id="view-supply-invoice-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 900px; width: 95%;">
+            <div class="modal-header">
+                <h3>تفاصيل وتعديل قائمة التوريد والشراء</h3>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="printSupplyInvoiceFromModal()">
+                        <i class="fa-solid fa-print"></i>
+                        <span>طباعة الوصل</span>
+                    </button>
+                    <button type="button" class="modal-close-btn" onclick="closeViewSupplyInvoiceModal()"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="modal-body" style="max-height: 75vh; overflow-y: auto; padding: 15px; color: var(--text-main); text-align: right;">
+                <form id="view-supply-invoice-form" onsubmit="handleSaveEditSupplyInvoice(event)">
+                    <input type="hidden" id="view-supply-id">
+                    
+                    <!-- Invoice Header Info (Editable) -->
+                    <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label for="view-supply-supplier">اسم المورد / الشركة</label>
+                            <input type="text" id="view-supply-supplier" class="form-control" required disabled>
+                        </div>
+                        <div class="form-group">
+                            <label for="view-supply-invoice-num">رقم الفاتورة (الوصل)</label>
+                            <input type="text" id="view-supply-invoice-num" class="form-control" required disabled>
+                        </div>
+                    </div>
+                    
+                    <div class="grid-2col" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label for="view-supply-payment-status">حالة دفع الفاتورة للمورد</label>
+                            <select id="view-supply-payment-status" class="form-control" onchange="toggleViewSupplyPaymentFields()" required disabled>
+                                <option value="paid">مدفوع بالكامل (نقدي)</option>
+                                <option value="credit">آجل (دين للمورد)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="view-supply-paid-amount-group" style="display: none;">
+                            <label for="view-supply-paid-amount">المبلغ المدفوع حالياً (د.ع)</label>
+                            <input type="number" id="view-supply-paid-amount" class="form-control" required disabled>
+                        </div>
+                    </div>
+
+                    <!-- Items list table (Editable when edit mode active) -->
+                    <h4 style="font-size: 14px; margin-top: 20px; margin-bottom: 10px; border-bottom: 1px dashed rgba(255,255,255,0.05); padding-bottom: 5px; color: var(--accent);">المواد والكميات الموردة</h4>
+                    <div class="basket-table-container" style="max-height: 250px; margin-bottom: 15px;">
+                        <table class="main-table" style="font-size: 13px; width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>باركود</th>
+                                    <th>اسم المنتج</th>
+                                    <th style="width: 15%;">سعر التكلفة (د.ع)</th>
+                                    <th style="width: 15%;">سعر البيع (د.ع)</th>
+                                    <th style="width: 12%;">الكمية</th>
+                                    <th style="width: 18%;">الإجمالي</th>
+                                    <th class="edit-mode-only" style="width: 8%; display:none;">إجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody id="view-supply-invoice-items-body">
+                                <!-- Dynamic items loaded from JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Edit/Add new item sub-form inside modal (visible in edit mode only) -->
+                    <div id="view-supply-add-item-box" style="display:none; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                        <h4 style="font-size: 13px; color: var(--accent); margin-bottom: 10px;"><i class="fa-solid fa-plus"></i> إضافة مادة جديدة للوصل</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size: 11px;">الباركود</label>
+                                <input type="text" id="view-item-barcode" class="form-control" style="padding: 6px; font-size:12px;" oninput="checkViewSupplyBarcode(this.value)">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size: 11px;">اسم المنتج</label>
+                                <input type="text" id="view-item-name" class="form-control" style="padding: 6px; font-size:12px;">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size: 11px;">سعر التكلفة (د.ع)</label>
+                                <input type="number" id="view-item-cost-iqd" class="form-control" style="padding: 6px; font-size:12px;">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size: 11px;">سعر البيع (د.ع)</label>
+                                <input type="number" id="view-item-price" class="form-control" style="padding: 6px; font-size:12px;">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size: 11px;">الكمية</label>
+                                <input type="number" id="view-item-qty" class="form-control" style="padding: 6px; font-size:12px;">
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary w-full" onclick="addTmpItemToEditSupplyInvoice()" style="margin-top: 10px; height: 32px; font-size: 12px; display:flex; align-items:center; justify-content:center; gap:5px;">
+                            <i class="fa-solid fa-cart-flatbed-suitcases"></i>
+                            <span>أضف هذه المادة للوصل</span>
+                        </button>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; border:1px solid var(--border-color);">
+                        <span>إجمالي قيمة الفاتورة:</span>
+                        <strong id="view-supply-total-cost" style="color:var(--primary); font-size:16px;">0 د.ع</strong>
+                    </div>
+
+                    <!-- Footer Action Buttons -->
+                    <div style="display:flex; gap:10px; justify-content:flex-end;">
+                        <!-- View mode buttons -->
+                        <button type="button" id="view-supply-edit-btn" class="btn btn-accent" onclick="enableSupplyInvoiceEditMode()" style="height: 40px; font-weight: 700;">
+                            <i class="fa-solid fa-pen-to-square"></i> <span>تعديل هذه الفاتورة</span>
+                        </button>
+                        <!-- Edit mode buttons (hidden by default) -->
+                        <button type="submit" id="view-supply-save-btn" class="btn btn-accent" style="height: 40px; font-weight: 700; display:none;">حفظ وتأكيد التعديلات</button>
+                        <button type="button" id="view-supply-cancel-edit-btn" class="btn btn-secondary" onclick="disableSupplyInvoiceEditMode()" style="height: 40px; display:none;">إلغاء التعديل</button>
+                        
+                        <button type="button" class="btn btn-secondary" onclick="closeViewSupplyInvoiceModal()" style="height: 40px;">إغلاق</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 

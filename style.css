@@ -535,14 +535,8 @@ body {
 /* SECTION STRUCTURES */
 .grid-2col {
     display: grid;
-    grid-template-columns: 1.8fr 1.2fr;
+    grid-template-columns: 1fr;
     gap: 20px;
-}
-
-@media (max-width: 1100px) {
-    .grid-2col {
-        grid-template-columns: 1fr;
-    }
 }
 
 .card-panel {
@@ -1311,7 +1305,7 @@ input:checked + .slider:before {
    ========================================== */
 .settings-workspace {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 1fr;
     gap: 30px;
     background: rgba(255, 255, 255, 0.015);
     border: 1px solid var(--border-color);
@@ -1327,14 +1321,18 @@ body.light-mode .settings-workspace {
 
 .settings-sidebar {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 12px;
-    border-left: 1px solid var(--border-color);
-    padding-left: 20px;
+    border-bottom: 1px solid var(--border-color);
+    border-left: none;
+    padding-left: 0;
+    padding-bottom: 20px;
 }
 
 body.light-mode .settings-sidebar {
-    border-left-color: rgba(0, 0, 0, 0.06);
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+    border-left: none;
 }
 
 .settings-nav-btn {
@@ -1343,13 +1341,13 @@ body.light-mode .settings-sidebar {
     gap: 15px;
     padding: 14px 18px;
     border: 1px solid transparent;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.02);
     border-radius: 14px;
     color: var(--text-muted);
     cursor: pointer;
     text-align: right;
     transition: var(--transition-normal);
-    width: 100%;
+    width: auto;
 }
 
 .settings-nav-btn i {

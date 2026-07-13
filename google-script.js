@@ -77,6 +77,7 @@ function getOrCreateSheet(ss, type) {
     case "daily_summary": sheetName = "الأرشيف والتقارير اليومية"; break;
     case "treasury": sheetName = "مطابقات الخزينة"; break;
     case "new_products": sheetName = "تقرير إضافة المنتجات"; break;
+    case "supply_invoices": sheetName = "قوائم التوريد والشراء"; break;
     default: sheetName = "عام";
   }
   
@@ -101,6 +102,8 @@ function getHeadersForType(type) {
       return ["التاريخ والوقت", "الرصيد الدفتري (النظام)", "الرصيد الفعلي (المحل)", "الفارق", "الحالة (مطابق/عجز/زيادة)", "الملاحظات وتتبع النقص", "المسؤول"];
     case "new_products":
       return ["التاريخ والوقت", "اسم المنتج", "الكمية المضافة", "رقم الفاتورة", "المصدر / المورد"];
+    case "supply_invoices":
+      return ["تاريخ التوريد", "رقم القائمة", "المورد / الشركة", "رقم الفاتورة", "التكلفة الإجمالية", "حالة الدفع", "المبلغ المدفوع", "الدين المتبقي", "المواد الموردة"];
     default:
       return ["التاريخ والوقت", "تفاصيل البيانات"];
   }
@@ -179,6 +182,25 @@ function objectToRow(type, item, headers) {
       item.qty || 0,
       item.invoice || "",
       item.source || ""
+    ];
+  }
+  else if (type === "supply_invoices") {
+    var itemsStr = "";
+    if (Array.isArray(item.items)) {
+      itemsStr = item.items.map(function(it) {
+        return it.name + " (" + it.quantity + "x @ " + it.cost.toLocaleString() + " د.ع)";
+      }).join(" | ");
+    }
+    row = [
+      item.date || new Date().toISOString(),
+      item.id || "",
+      item.supplier || "",
+      item.invoiceNumber || "",
+      item.totalCost || 0,
+      item.paymentStatus === "paid" ? "مدفوع بالكامل" : "آجل",
+      item.paidAmount || 0,
+      item.remainingDebt || 0,
+      itemsStr
     ];
   }
   else {

@@ -321,7 +321,8 @@ const SyncManager = {
                 cloudSettings,
                 cloudDebts,
                 cloudDebtPayments,
-                cloudNewProducts
+                cloudNewProducts,
+                cloudSupplyInvoices
             ] = await Promise.all([
                 this.fetchFromFirebase("inventory", "inventory_master"),
                 this.fetchFromFirebase("employees_master", "employees_master"),
@@ -334,7 +335,8 @@ const SyncManager = {
                 this.fetchFromFirebase("system_config", "settings_config"),
                 this.fetchFromFirebase("customer_debts", "debts_list"),
                 this.fetchFromFirebase("debt_payments"),
-                this.fetchFromFirebase("new_products_report")
+                this.fetchFromFirebase("new_products_report"),
+                this.fetchFromFirebase("supply_invoices")
             ]);
             
             let hasCloudData = false;
@@ -432,6 +434,17 @@ const SyncManager = {
                     this.dispatchSync("new_products", r, docId);
                 });
             }
+
+            // Merge or Seed Supply Invoices
+            if (cloudSupplyInvoices && Array.isArray(cloudSupplyInvoices)) {
+                cloudSupplyInvoices.sort((a, b) => new Date(a.date) - new Date(b.date));
+                AppState.supplyInvoices = cloudSupplyInvoices;
+                hasCloudData = true;
+            } else if (AppState.supplyInvoices && AppState.supplyInvoices.length > 0) {
+                AppState.supplyInvoices.forEach(inv => {
+                    this.dispatchSync("supply_invoices", inv, inv.id);
+                });
+            }
             
             AppState.saveAll();
             return hasCloudData;
@@ -463,10 +476,12 @@ const SyncManager = {
             case "debts": firebaseCollection = "customer_debts"; break;
             case "debt_payments": firebaseCollection = "debt_payments"; break;
             case "new_products": firebaseCollection = "new_products_report"; break;
+            case "supply_invoices": firebaseCollection = "supply_invoices"; break;
             case "sales_delete": firebaseCollection = "sales_invoices"; isDelete = true; break;
             case "expenses_delete": firebaseCollection = "expenses"; isDelete = true; break;
             case "salaries_delete": firebaseCollection = "salary_transactions"; isDelete = true; break;
             case "treasury_delete": firebaseCollection = "treasury_reconciliations"; isDelete = true; break;
+            case "supply_invoices_delete": firebaseCollection = "supply_invoices"; isDelete = true; break;
         }
         
         if (firebaseCollection && docId) {
@@ -1731,6 +1746,28 @@ function calculateTreasuryReconciliation() {
         meterFill.style.width = '25%';
         meterFill.style.backgroundColor = 'var(--danger)';
     }
+    
+    // Calculate monthly cumulative surplus and deficit for the current month
+    const accumMonth = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+    let monthSurplus = 0;
+    let monthDeficit = 0;
+    
+    (AppState.reconciliations || []).forEach(r => {
+        const dObj = new Date(r.timestamp);
+        const mKey = dObj.getFullYear() + '-' + String(dObj.getMonth() + 1).padStart(2, '0');
+        if (mKey === accumMonth) {
+            if (r.difference > 0) {
+                monthSurplus += r.difference;
+            } else if (r.difference < 0) {
+                monthDeficit += Math.abs(r.difference);
+            }
+        }
+    });
+
+    const accumSurplusLabel = document.getElementById('treasury-accum-surplus');
+    const accumDeficitLabel = document.getElementById('treasury-accum-deficit');
+    if (accumSurplusLabel) accumSurplusLabel.innerText = `${monthSurplus.toLocaleString()} د.ع`;
+    if (accumDeficitLabel) accumDeficitLabel.innerText = `${monthDeficit.toLocaleString()} د.ع`;
     
     renderTreasuryLogTable();
 }
@@ -3084,10 +3121,77 @@ function renderMonthlyBreakdownDetails() {
         cogsProfitLabel.style.color = monthlyCogsProfit >= 0 ? 'var(--primary)' : 'var(--danger)';
     }
     
-    const netProfit = totalSales + totalDebtPayments - (totalExpenses + totalSalaries);
+    // --- MONTHLY SETTLEMENT CALCULATIONS ---
+    let totalCashSurplus = 0;
+    let totalCashDeficit = 0;
+    
+    (AppState.reconciliations || []).forEach(r => {
+        const dObj = new Date(r.timestamp);
+        const mKey = dObj.getFullYear() + '-' + String(dObj.getMonth() + 1).padStart(2, '0');
+        if (mKey === selectedMonth) {
+            if (r.difference > 0) {
+                totalCashSurplus += r.difference;
+            } else if (r.difference < 0) {
+                totalCashDeficit += Math.abs(r.difference);
+            }
+        }
+    });
+    
+    let totalInventoryShortage = 0;
+    let totalInventorySurplus = 0;
+    
+    (AppState.inventoryAudits || []).forEach(a => {
+        const dObj = new Date(a.timestamp);
+        const mKey = dObj.getFullYear() + '-' + String(dObj.getMonth() + 1).padStart(2, '0');
+        if (mKey === selectedMonth) {
+            totalInventoryShortage += a.shortageValue || 0;
+            totalInventorySurplus += a.surplusValue || 0;
+        }
+    });
+    
+    const adjustedCashSurplus = Math.max(0, totalCashSurplus - totalInventoryShortage);
+    const adjustedCashDeficit = Math.max(0, totalCashDeficit - totalInventorySurplus);
+    const remainingItemShortage = Math.max(0, totalInventoryShortage - totalCashSurplus);
+    const remainingItemSurplus = Math.max(0, totalInventorySurplus - totalCashDeficit);
+    
+    const netReconciliationAdjustment = adjustedCashSurplus - adjustedCashDeficit - remainingItemShortage + remainingItemSurplus;
+    
+    // Update UI elements in Monthly Report panel
+    const monSurpEl = document.getElementById('month-recon-surplus');
+    const monDefEl = document.getElementById('month-recon-deficit');
+    const monShortEl = document.getElementById('month-audit-shortage');
+    const monSurpAuditEl = document.getElementById('month-audit-surplus');
+    
+    if (monSurpEl) monSurpEl.innerText = `${totalCashSurplus.toLocaleString()} د.ع`;
+    if (monDefEl) monDefEl.innerText = `${totalCashDeficit.toLocaleString()} د.ع`;
+    if (monShortEl) monShortEl.innerText = `${totalInventoryShortage.toLocaleString()} د.ع`;
+    if (monSurpAuditEl) monSurpAuditEl.innerText = `${totalInventorySurplus.toLocaleString()} د.ع`;
+    
+    const adjSurpEl = document.getElementById('settlement-adj-surplus');
+    const adjDefEl = document.getElementById('settlement-adj-deficit');
+    const remShortEl = document.getElementById('settlement-rem-shortage');
+    const remSurpEl = document.getElementById('settlement-rem-surplus');
+    const netImpactEl = document.getElementById('settlement-net-impact');
+    
+    if (adjSurpEl) adjSurpEl.innerText = `${adjustedCashSurplus.toLocaleString()} د.ع`;
+    if (adjDefEl) adjDefEl.innerText = `${adjustedCashDeficit.toLocaleString()} د.ع`;
+    if (remShortEl) remShortEl.innerText = `${remainingItemShortage.toLocaleString()} د.ع`;
+    if (remSurpEl) remSurpEl.innerText = `${remainingItemSurplus.toLocaleString()} د.ع`;
+    
+    if (netImpactEl) {
+        netImpactEl.innerText = `${(netReconciliationAdjustment >= 0 ? '+' : '')}${netReconciliationAdjustment.toLocaleString()} د.ع`;
+        netImpactEl.style.color = netReconciliationAdjustment >= 0 ? '#10b981' : 'var(--danger)';
+    }
+    
+    // Final Net Profit = Original Net Profit + Net Reconciliation Adjustment
+    const originalNetProfit = totalSales + totalDebtPayments - (totalExpenses + totalSalaries);
+    const finalNetProfit = originalNetProfit + netReconciliationAdjustment;
+    
     const netProfitLabel = document.getElementById('month-net-profit');
-    netProfitLabel.innerText = `${netProfit.toLocaleString()} د.ع`;
-    netProfitLabel.style.color = netProfit >= 0 ? 'var(--primary)' : 'var(--danger)';
+    if (netProfitLabel) {
+        netProfitLabel.innerText = `${finalNetProfit.toLocaleString()} د.ع`;
+        netProfitLabel.style.color = finalNetProfit >= 0 ? 'var(--primary)' : 'var(--danger)';
+    }
     
     const tbody = document.getElementById('monthly-items-breakdown-body');
     tbody.innerHTML = '';
@@ -5587,6 +5691,7 @@ function handleSaveSupplyInvoice(e) {
     
     // Sync all master databases to Cloud
     SyncManager.dispatchSync("products", AppState.products, "inventory_master");
+    SyncManager.dispatchSync("supply_invoices", supplyInvoiceRecord, supplyInvoiceRecord.id);
     
     closeSupplyInvoiceModal();
     playBeep('success');
@@ -5651,7 +5756,9 @@ function renderNewProductsReport(filterText = '') {
                     <td class="price-value">${inv.paidAmount.toLocaleString()} د.ع</td>
                     <td class="price-value" style="color:var(--danger); font-weight:700;">${inv.remainingDebt.toLocaleString()} د.ع</td>
                     <td>
-                        <button class="btn btn-secondary btn-sm" onclick="alert(\`${itemsTooltip}\`)">المواد (${inv.items.length})</button>
+                        <button class="btn btn-secondary btn-sm" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; border: none;" onclick="openViewSupplyInvoiceModal('${inv.id}')">
+                            <i class="fa-solid fa-eye"></i> <span>تفاصيل (${inv.items.length})</span>
+                        </button>
                     </td>
                 </tr>
             `;
@@ -5925,10 +6032,8 @@ function generateAuditReport() {
             difference: diff
         });
         
-        // Overwrite system qty if checked
-        if (document.getElementById('audit-reconcile-stock-qty').checked) {
-            p.qty = physVal;
-        }
+        // Overwrite system qty disabled as per user request (Requirement #1)
+        // p.qty = physVal;
     });
     
     const auditRecord = {
@@ -5948,10 +6053,7 @@ function generateAuditReport() {
     AppState.inventoryAudits.push(auditRecord);
     AppState.saveAll();
     
-    // Sync updated stock to Google sheets
-    if (document.getElementById('audit-reconcile-stock-qty').checked) {
-        SyncManager.dispatchSync("products", AppState.products, "inventory_master");
-    }
+    // Sync updated stock disabled as per user request (Requirement #1)
     
     // Construct report preview HTML inside modal
     const modalBody = document.getElementById('audit-report-printable-area');
@@ -6311,6 +6413,445 @@ function renderMonthlyDayDetails() {
 function closeDebtorDetailModal() {
     const modal = document.getElementById('debtor-detail-modal');
     if (modal) modal.classList.remove('active');
+}
+
+// --- VIEW/EDIT SUPPLY INVOICE DETAILS MODAL FUNCTIONS ---
+let editingSupplyInvoiceCopy = null; 
+let isSupplyEditMode = false;
+
+function openViewSupplyInvoiceModal(invId) {
+    const inv = AppState.supplyInvoices.find(x => x.id === invId);
+    if (!inv) return;
+    
+    editingSupplyInvoiceCopy = JSON.parse(JSON.stringify(inv));
+    isSupplyEditMode = false;
+    
+    document.getElementById('view-supply-id').value = inv.id;
+    document.getElementById('view-supply-supplier').value = inv.supplier;
+    document.getElementById('view-supply-invoice-num').value = inv.invoiceNumber;
+    document.getElementById('view-supply-payment-status').value = inv.paymentStatus;
+    
+    const paidAmountGroup = document.getElementById('view-supply-paid-amount-group');
+    const paidAmountInput = document.getElementById('view-supply-paid-amount');
+    
+    paidAmountInput.value = inv.paidAmount;
+    if (inv.paymentStatus === 'credit') {
+        paidAmountGroup.style.display = 'block';
+    } else {
+        paidAmountGroup.style.display = 'none';
+    }
+    
+    document.getElementById('view-supply-supplier').disabled = true;
+    document.getElementById('view-supply-invoice-num').disabled = true;
+    document.getElementById('view-supply-payment-status').disabled = true;
+    paidAmountInput.disabled = true;
+    
+    document.getElementById('view-supply-edit-btn').style.display = 'inline-flex';
+    document.getElementById('view-supply-save-btn').style.display = 'none';
+    document.getElementById('view-supply-cancel-edit-btn').style.display = 'none';
+    document.getElementById('view-supply-add-item-box').style.display = 'none';
+    
+    renderViewSupplyInvoiceItems();
+    
+    const modal = document.getElementById('view-supply-invoice-modal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeViewSupplyInvoiceModal() {
+    const modal = document.getElementById('view-supply-invoice-modal');
+    if (modal) modal.classList.remove('active');
+    editingSupplyInvoiceCopy = null;
+    isSupplyEditMode = false;
+}
+
+function toggleViewSupplyPaymentFields() {
+    const status = document.getElementById('view-supply-payment-status').value;
+    const paidAmountGroup = document.getElementById('view-supply-paid-amount-group');
+    if (status === 'credit') {
+        paidAmountGroup.style.display = 'block';
+    } else {
+        paidAmountGroup.style.display = 'none';
+    }
+}
+
+function renderViewSupplyInvoiceItems() {
+    const tbody = document.getElementById('view-supply-invoice-items-body');
+    if (!tbody || !editingSupplyInvoiceCopy) return;
+    
+    tbody.innerHTML = '';
+    let totalCost = 0;
+    
+    editingSupplyInvoiceCopy.items.forEach((it, idx) => {
+        const itemTotal = it.cost * it.quantity;
+        totalCost += itemTotal;
+        
+        tbody.innerHTML += `
+            <tr>
+                <td style="font-family:'Inter'; font-size:12px;">${it.barcode}</td>
+                <td style="font-weight:700;">${it.name}</td>
+                <td>
+                    ${isSupplyEditMode ? 
+                        `<input type="number" class="form-control text-center" style="padding: 4px; font-size: 12px; width: 100px; margin: 0 auto;" value="${it.cost}" oninput="updateViewSupplyItemCost(${idx}, this.value)">` 
+                        : `${it.cost.toLocaleString()} د.ع`
+                    }
+                </td>
+                <td>
+                    ${isSupplyEditMode ? 
+                        `<input type="number" class="form-control text-center" style="padding: 4px; font-size: 12px; width: 100px; margin: 0 auto;" value="${it.price}" oninput="updateViewSupplyItemPrice(${idx}, this.value)">` 
+                        : `${it.price.toLocaleString()} د.ع`
+                    }
+                </td>
+                <td>
+                    ${isSupplyEditMode ? 
+                        `<input type="number" class="form-control text-center" style="padding: 4px; font-size: 12px; width: 70px; margin: 0 auto;" value="${it.quantity}" oninput="updateViewSupplyItemQty(${idx}, this.value)">` 
+                        : `${it.quantity}`
+                    }
+                </td>
+                <td class="price-value" style="font-weight:700;">${itemTotal.toLocaleString()} د.ع</td>
+                <td class="edit-mode-only" style="display: ${isSupplyEditMode ? 'table-cell' : 'none'}; text-align: center;">
+                    <button type="button" class="btn btn-danger btn-sm" style="padding: 4px 8px;" onclick="removeTmpItemFromEditSupplyInvoice(${idx})">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    document.getElementById('view-supply-total-cost').innerText = `${totalCost.toLocaleString()} د.ع`;
+}
+
+function updateViewSupplyItemCost(idx, val) {
+    if (!editingSupplyInvoiceCopy) return;
+    editingSupplyInvoiceCopy.items[idx].cost = parseInt(val) || 0;
+    let totalCost = 0;
+    editingSupplyInvoiceCopy.items.forEach(it => {
+        totalCost += it.cost * it.quantity;
+    });
+    document.getElementById('view-supply-total-cost').innerText = `${totalCost.toLocaleString()} د.ع`;
+}
+
+function updateViewSupplyItemPrice(idx, val) {
+    if (!editingSupplyInvoiceCopy) return;
+    editingSupplyInvoiceCopy.items[idx].price = parseInt(val) || 0;
+}
+
+function updateViewSupplyItemQty(idx, val) {
+    if (!editingSupplyInvoiceCopy) return;
+    editingSupplyInvoiceCopy.items[idx].quantity = parseInt(val) || 0;
+    let totalCost = 0;
+    editingSupplyInvoiceCopy.items.forEach(it => {
+        totalCost += it.cost * it.quantity;
+    });
+    document.getElementById('view-supply-total-cost').innerText = `${totalCost.toLocaleString()} د.ع`;
+}
+
+function enableSupplyInvoiceEditMode() {
+    isSupplyEditMode = true;
+    
+    document.getElementById('view-supply-supplier').disabled = false;
+    document.getElementById('view-supply-invoice-num').disabled = false;
+    document.getElementById('view-supply-payment-status').disabled = false;
+    document.getElementById('view-supply-paid-amount').disabled = false;
+    
+    document.getElementById('view-supply-edit-btn').style.display = 'none';
+    document.getElementById('view-supply-save-btn').style.display = 'inline-flex';
+    document.getElementById('view-supply-cancel-edit-btn').style.display = 'inline-flex';
+    document.getElementById('view-supply-add-item-box').style.display = 'block';
+    
+    renderViewSupplyInvoiceItems();
+}
+
+function disableSupplyInvoiceEditMode() {
+    isSupplyEditMode = false;
+    
+    const original = AppState.supplyInvoices.find(x => x.id === editingSupplyInvoiceCopy.id);
+    editingSupplyInvoiceCopy = JSON.parse(JSON.stringify(original));
+    
+    document.getElementById('view-supply-supplier').value = original.supplier;
+    document.getElementById('view-supply-invoice-num').value = original.invoiceNumber;
+    document.getElementById('view-supply-payment-status').value = original.paymentStatus;
+    document.getElementById('view-supply-paid-amount').value = original.paidAmount;
+    
+    document.getElementById('view-supply-supplier').disabled = true;
+    document.getElementById('view-supply-invoice-num').disabled = true;
+    document.getElementById('view-supply-payment-status').disabled = true;
+    document.getElementById('view-supply-paid-amount').disabled = true;
+    
+    document.getElementById('view-supply-edit-btn').style.display = 'inline-flex';
+    document.getElementById('view-supply-save-btn').style.display = 'none';
+    document.getElementById('view-supply-cancel-edit-btn').style.display = 'none';
+    document.getElementById('view-supply-add-item-box').style.display = 'none';
+    
+    toggleViewSupplyPaymentFields();
+    renderViewSupplyInvoiceItems();
+}
+
+function checkViewSupplyBarcode(barcode) {
+    if (!barcode) return;
+    const found = AppState.products.find(p => p.barcode === barcode.trim());
+    if (found) {
+        document.getElementById('view-item-name').value = found.name;
+        document.getElementById('view-item-cost-iqd').value = found.cost;
+        document.getElementById('view-item-price').value = found.price;
+        document.getElementById('view-item-qty').focus();
+    }
+}
+
+function addTmpItemToEditSupplyInvoice() {
+    if (!editingSupplyInvoiceCopy) return;
+    
+    const barcode = document.getElementById('view-item-barcode').value.trim();
+    const name = document.getElementById('view-item-name').value.trim();
+    const cost = parseInt(document.getElementById('view-item-cost-iqd').value) || 0;
+    const price = parseInt(document.getElementById('view-item-price').value) || 0;
+    const qty = parseInt(document.getElementById('view-item-qty').value) || 0;
+    
+    if (!barcode || !name || qty <= 0) {
+        alert("يرجى ملء الباركود واسم المادة وتحديد الكمية!");
+        return;
+    }
+    
+    const newItem = {
+        barcode,
+        name,
+        cost,
+        price,
+        quantity: qty
+    };
+    
+    editingSupplyInvoiceCopy.items.push(newItem);
+    
+    document.getElementById('view-item-barcode').value = '';
+    document.getElementById('view-item-name').value = '';
+    document.getElementById('view-item-cost-iqd').value = '';
+    document.getElementById('view-item-price').value = '';
+    document.getElementById('view-item-qty').value = '';
+    
+    renderViewSupplyInvoiceItems();
+}
+
+function removeTmpItemFromEditSupplyInvoice(index) {
+    if (!editingSupplyInvoiceCopy) return;
+    editingSupplyInvoiceCopy.items.splice(index, 1);
+    renderViewSupplyInvoiceItems();
+}
+
+function handleSaveEditSupplyInvoice(e) {
+    if (e) e.preventDefault();
+    if (!editingSupplyInvoiceCopy) return;
+    
+    const supplierName = document.getElementById('view-supply-supplier').value.trim();
+    const invoiceNum = document.getElementById('view-supply-invoice-num').value.trim();
+    const paymentStatus = document.getElementById('view-supply-payment-status').value;
+    const paidAmount = parseInt(document.getElementById('view-supply-paid-amount').value) || 0;
+    
+    if (!supplierName || !invoiceNum) {
+        alert("يرجى إدخال اسم المورد ورقم الفاتورة!");
+        return;
+    }
+    
+    if (editingSupplyInvoiceCopy.items.length === 0) {
+        alert("يرجى إضافة مادة واحدة على الأقل لقائمة التوريد!");
+        return;
+    }
+    
+    const original = AppState.supplyInvoices.find(x => x.id === editingSupplyInvoiceCopy.id);
+    if (!original) return;
+    
+    let totalInvoiceCost = 0;
+    editingSupplyInvoiceCopy.items.forEach(it => {
+        totalInvoiceCost += it.cost * it.quantity;
+    });
+    
+    let remainingDebt = 0;
+    if (paymentStatus === 'credit') {
+        remainingDebt = Math.max(0, totalInvoiceCost - paidAmount);
+    }
+    
+    const oldQtyMap = {};
+    original.items.forEach(it => {
+        oldQtyMap[it.barcode] = (oldQtyMap[it.barcode] || 0) + it.quantity;
+    });
+    
+    const newQtyMap = {};
+    editingSupplyInvoiceCopy.items.forEach(it => {
+        newQtyMap[it.barcode] = (newQtyMap[it.barcode] || 0) + it.quantity;
+    });
+    
+    const allBarcodes = new Set([...Object.keys(oldQtyMap), ...Object.keys(newQtyMap)]);
+    allBarcodes.forEach(bc => {
+        const oldQty = oldQtyMap[bc] || 0;
+        const newQty = newQtyMap[bc] || 0;
+        const diff = newQty - oldQty;
+        
+        const p = AppState.products.find(x => x.barcode === bc);
+        if (p) {
+            p.qty = Math.max(0, p.qty + diff);
+            const matchingItem = editingSupplyInvoiceCopy.items.find(x => x.barcode === bc);
+            if (matchingItem) {
+                p.cost = matchingItem.cost;
+                p.price = matchingItem.price;
+                p.source = supplierName;
+            }
+        } else if (newQty > 0) {
+            const matchingItem = editingSupplyInvoiceCopy.items.find(x => x.barcode === bc);
+            if (matchingItem) {
+                const newProduct = {
+                    id: "p_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+                    barcode: bc,
+                    name: matchingItem.name,
+                    cost: matchingItem.cost,
+                    price: matchingItem.price,
+                    qty: newQty,
+                    source: supplierName
+                };
+                AppState.products.push(newProduct);
+            }
+        }
+    });
+    
+    const oldDebtDiff = remainingDebt - original.remainingDebt;
+    if (oldDebtDiff !== 0) {
+        if (!AppState.supplierDebts) AppState.supplierDebts = {};
+        if (!AppState.supplierDebts[supplierName]) {
+            AppState.supplierDebts[supplierName] = 0;
+        }
+        AppState.supplierDebts[supplierName] = Math.max(0, AppState.supplierDebts[supplierName] + oldDebtDiff);
+        
+        if (original.supplier !== supplierName) {
+            if (AppState.supplierDebts[original.supplier]) {
+                AppState.supplierDebts[original.supplier] = Math.max(0, AppState.supplierDebts[original.supplier] - original.remainingDebt);
+            }
+            AppState.supplierDebts[supplierName] = Math.max(0, AppState.supplierDebts[supplierName] + remainingDebt - oldDebtDiff);
+        }
+    } else if (original.supplier !== supplierName) {
+        if (AppState.supplierDebts[original.supplier]) {
+            AppState.supplierDebts[original.supplier] = Math.max(0, AppState.supplierDebts[original.supplier] - original.remainingDebt);
+        }
+        if (!AppState.supplierDebts[supplierName]) {
+            AppState.supplierDebts[supplierName] = 0;
+        }
+        AppState.supplierDebts[supplierName] += remainingDebt;
+    }
+    
+    original.supplier = supplierName;
+    original.invoiceNumber = invoiceNum;
+    original.paymentStatus = paymentStatus;
+    original.totalCost = totalInvoiceCost;
+    original.paidAmount = paymentStatus === 'paid' ? totalInvoiceCost : paidAmount;
+    original.remainingDebt = remainingDebt;
+    original.items = editingSupplyInvoiceCopy.items;
+    
+    AppState.saveAll();
+    
+    SyncManager.dispatchSync("products", AppState.products, "inventory_master");
+    SyncManager.dispatchSync("supply_invoices", original, original.id);
+    
+    closeViewSupplyInvoiceModal();
+    playBeep('success');
+    renderInventoryTable();
+    renderNewProductsReport();
+    
+    alert(`تم تعديل وحفظ قائمة التوريد بنجاح! وتعديل كميات المستودع الحالية.`);
+}
+
+function printSupplyInvoiceFromModal() {
+    if (!editingSupplyInvoiceCopy) return;
+    
+    const inv = editingSupplyInvoiceCopy;
+    const dt = new Date(inv.date).toLocaleString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const paymentText = inv.paymentStatus === 'paid' ? 'مدفوع نقدًا بالكامل' : 'آجل (دين للمورد)';
+    
+    let rowsHtml = '';
+    inv.items.forEach((it, index) => {
+        rowsHtml += `
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${index + 1}</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${it.name}</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${it.quantity}</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${it.cost.toLocaleString()} د.ع</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${(it.cost * it.quantity).toLocaleString()} د.ع</td>
+            </tr>
+        `;
+    });
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html dir="rtl" lang="ar">
+        <head>
+            <title>فاتورة توريد وشراء بضاعة - ${inv.invoiceNumber}</title>
+            <style>
+                body { font-family: 'system-ui', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; }
+                .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
+                .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
+                .info-table td { padding: 6px; font-size: 14px; }
+                .items-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                .items-table th { background-color: #f4f4f4; border: 1px solid #ddd; padding: 10px; text-align: center; font-size: 14px; }
+                .total-box { float: left; width: 300px; font-size: 14px; margin-top: 10px; border: 1px solid #333; padding: 15px; border-radius: 8px; }
+                .total-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+                .total-row:last-child { font-weight: bold; border-top: 1px solid #eee; padding-top: 8px; margin-bottom: 0; }
+                @media print {
+                    .no-print { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>وصل توريد وشراء بضاعة</h2>
+                <p>تاريخ الوصل: ${dt}</p>
+            </div>
+            
+            <table class="info-table">
+                <tr>
+                    <td><strong>رقم القائمة:</strong> ${inv.id}</td>
+                    <td><strong>رقم فاتورة المورد:</strong> ${inv.invoiceNumber}</td>
+                </tr>
+                <tr>
+                    <td><strong>المورد / الشركة:</strong> ${inv.supplier}</td>
+                    <td><strong>حالة الدفع:</strong> ${paymentText}</td>
+                </tr>
+            </table>
+            
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8%;">ت</th>
+                        <th>اسم المادة</th>
+                        <th style="width: 12%;">الكمية</th>
+                        <th style="width: 18%;">سعر التكلفة</th>
+                        <th style="width: 22%;">الإجمالي</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+            
+            <div class="total-box">
+                <div class="total-row">
+                    <span>قيمة الفاتورة الإجمالية:</span>
+                    <span>${inv.totalCost.toLocaleString()} د.ع</span>
+                </div>
+                <div class="total-row">
+                    <span>المبلغ المدفوع:</span>
+                    <span>${inv.paidAmount.toLocaleString()} د.ع</span>
+                </div>
+                <div class="total-row">
+                    <span>المبلغ المتبقي (الدين):</span>
+                    <span style="color:red;">${inv.remainingDebt.toLocaleString()} د.ع</span>
+                </div>
+            </div>
+            
+            <script>
+                window.onload = function() {
+                    window.print();
+                    setTimeout(function() { window.close(); }, 500);
+                }
+            </script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
 }
 
 // Initialize on page load
